@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/t11z/flux/actions/workflows/ci.yml/badge.svg)](https://github.com/t11z/flux/actions/workflows/ci.yml)
 
-**A lightweight, extensible firewall GitOps automation skeleton for Palo Alto Panorama.**
+**A lightweight, extensible firewall GitOps automation skeleton for Palo Alto Networks Panorama.**
 
 flux demonstrates configuration-as-code for Panorama: configuration flows from Git through
 Terraform into Panorama, but every change is checked by a **validate-before-apply gate** derived

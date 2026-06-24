@@ -5,7 +5,7 @@
 
 ## Project
 
-`flux` — a lightweight, extensible firewall GitOps automation skeleton that demonstrates configuration-as-code patterns for Palo Alto Panorama.
+`flux` — a lightweight, extensible firewall GitOps automation skeleton that demonstrates configuration-as-code patterns for Palo Alto Networks Panorama.
 
 ## Language regime
 

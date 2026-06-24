@@ -1,0 +1,18 @@
+// Custom styles appended after the theme.
+
+// Give every Mermaid diagram a light "card" background so the (neutral-theme)
+// nodes, edges and arrows are clearly visible on the dark color scheme.
+.mermaid {
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
