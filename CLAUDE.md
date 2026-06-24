@@ -40,6 +40,7 @@ This project authenticates Claude tooling via `CLAUDE_CODE_OAUTH_TOKEN`, never `
 - `docs/decisions/` — architecture decision records (smADR). Start at `docs/decisions/README.md`.
 - `docs/IMPLEMENTATION-LOG.md` — dated working log; `docs/panorama-xpath-map.md` — supported XPaths.
 - `tools/` — XML-API wrapper, seeding, probing, schema compiler, validator (see `tools/CLAUDE.md`).
+- `mock/` — stdlib mock Panorama XML-API server for end-to-end pipeline runs (see `mock/CLAUDE.md`).
 - `schema/` — `panorama-schema.json` (source of truth), `fixtures/`, `constraints/`, `versions/`.
 - `.claude/commands/` — slash commands: `/adr-new`, `/security-review`.
 - `.claude/agents/` — subagents: `adr-author`, `security-reviewer`.

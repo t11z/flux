@@ -23,6 +23,10 @@ crash.log
 tmp/
 scratch/
 
+# Python
+__pycache__/
+*.pyc
+
 # OS
 Thumbs.db
 .DS_Store

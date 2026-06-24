@@ -7,16 +7,14 @@ via the PAN-OS XML API. Python stdlib only -> runs anywhere (e.g. the GitLab
 runner), no pip dependencies.
 
 What it checks (mirrors PAN-OS behaviour observed via constraint probing and
-the validate-full comparison):
-  - target XPath -> a known resource type?
-  - entry has a non-empty name attribute
-  - only allowed child elements (mirrors PAN-OS "unexpected here")
-  - required fields -- the XML-API "set" lets these through, "commit" does not
-  - choice groups: zero -> error (mirrors "missing one of ..."),
-    more than one -> warning (PAN-OS silently keeps one, so we flag, not fail)
-  - enum values (e.g. action)
-  - value formats (ip-netmask, ip-range, fqdn, port)
-  - member lists contain non-empty <member>
+the validate-full comparison). Each finding carries a `phase`:
+  - phase "set"    -> enforced by the XML-API at `set` time (structural):
+                      unknown/unexpected elements, enum values, value formats.
+  - phase "commit" -> enforced only at commit / `validate full` (semantic):
+                      required fields, choice cardinality, member lists.
+The CLI gate fails on ANY error (both phases) - that is the point of validating
+before apply. The mock server (mock/panorama_mock.py) uses the phase to mirror
+the real device: reject phase-"set" errors on `set`, phase-"commit" on commit.
 
 The schema is bound to a PAN-OS version (schema["panosVersion"]). Pass
 --panos-version to enforce that the target matches the schema.
@@ -92,36 +90,37 @@ class Validator:
     def __init__(self):
         self.findings = []
 
-    def add(self, level, path, msg):
-        self.findings.append({"level": level, "path": path, "message": msg})
+    def add(self, level, path, msg, phase="set"):
+        self.findings.append({"level": level, "path": path, "message": msg, "phase": phase})
 
     def test_node(self, node, sch, path):
         children = list(node)
         present = [c.tag for c in children]
 
+        # structural: unknown elements are rejected at set time
         if "allowedChildren" in sch:
             allowed = as_list(sch.get("allowedChildren"))
             for c in children:
                 if c.tag not in allowed:
                     self.add("error", f"{path}/{c.tag}",
-                             f"element '{c.tag}' is not allowed here (unexpected)")
+                             f"element '{c.tag}' is not allowed here (unexpected)", phase="set")
 
+        # semantic: required fields are enforced at commit time
         for r in as_list(sch.get("required")):
             if r not in present:
-                self.add("error", f"{path}/{r}", f"required field '{r}' is missing")
+                self.add("error", f"{path}/{r}", f"required field '{r}' is missing", phase="commit")
 
-        # choice groups: 0 -> error (commit-time "missing one of"),
-        # >1 -> warning (PAN-OS silently keeps one)
+        # semantic: choice groups - zero -> commit error, >1 -> warning
         for group in as_list(sch.get("oneOf")):
             group = as_list(group)
             hit = [g for g in group if g in present]
             if len(hit) == 0:
                 self.add("error", path,
-                         f"requires one of {{ {', '.join(group)} }}, none present")
+                         f"requires one of {{ {', '.join(group)} }}, none present", phase="commit")
             elif len(hit) > 1:
                 self.add("warning", path,
                          f"more than one of {{ {', '.join(group)} }} present "
-                         f"({', '.join(hit)}); PAN-OS keeps only one")
+                         f"({', '.join(hit)}); PAN-OS keeps only one", phase="commit")
 
         enums = sch.get("enums") or {}
         formats = sch.get("formats") or {}
@@ -131,20 +130,20 @@ class Validator:
         for c in children:
             cp = f"{path}/{c.tag}"
             text = (c.text or "").strip()
-            if c.tag in enums:
+            if c.tag in enums:  # structural keyword -> set time
                 allowedv = as_list(enums[c.tag])
                 if text not in allowedv:
                     self.add("error", cp, f"value '{text}' not allowed; "
-                                          f"valid: {{ {', '.join(allowedv)} }}")
-            if c.tag in formats:
+                                          f"valid: {{ {', '.join(allowedv)} }}", phase="set")
+            if c.tag in formats:  # value format -> set time
                 if not test_format(formats[c.tag], text):
-                    self.add("error", cp, f"value '{text}' violates format '{formats[c.tag]}'")
-            if c.tag in memberlists:
+                    self.add("error", cp, f"value '{text}' violates format '{formats[c.tag]}'", phase="set")
+            if c.tag in memberlists:  # semantic -> commit time
                 members = [m for m in list(c) if m.tag == "member"]
                 if not members:
-                    self.add("error", cp, f"member list '{c.tag}' contains no <member>")
+                    self.add("error", cp, f"member list '{c.tag}' contains no <member>", phase="commit")
                 elif any((m.text or "").strip() == "" for m in members):
-                    self.add("error", cp, f"empty <member> in '{c.tag}'")
+                    self.add("error", cp, f"empty <member> in '{c.tag}'", phase="commit")
             if c.tag in nested:
                 self.test_node(c, nested[c.tag], cp)
 
@@ -157,6 +156,32 @@ def resolve_resource(resources, xpath, forced=None):
         if container in as_list(rd.get("containers")):
             return rn
     return None
+
+
+def validate_entry(schema, xpath, root, resource=None):
+    """Validate an <entry> Element against the schema.
+
+    Returns (resource_name_or_None, findings). Each finding is a dict with
+    level/path/message/phase. If the xpath maps to no known resource, returns
+    (None, []) - the caller decides what to do (the mock applies without checks).
+    """
+    resources = schema["resources"]
+    res_name = resolve_resource(resources, xpath, resource)
+    v = Validator()
+    if not res_name:
+        return None, v.findings
+    if root.tag != "entry":
+        v.add("error", xpath, f"root element is '{root.tag}', expected 'entry'", phase="set")
+    if not (root.get("name") or "").strip():
+        v.add("error", xpath, "entry without a (non-empty) name attribute", phase="set")
+    v.test_node(root, resources[res_name], f"entry[{root.get('name')}]")
+    return res_name, v.findings
+
+
+def load_schema(path=None):
+    schema_path = Path(path) if path else Path(__file__).resolve().parent.parent / "schema" / "panorama-schema.json"
+    with open(schema_path, encoding="utf-8-sig") as f:
+        return json.load(f)
 
 
 def main():
@@ -173,63 +198,55 @@ def main():
     ap.add_argument("--json", action="store_true", help="emit a JSON report")
     a = ap.parse_args()
 
-    schema_path = (Path(a.schema) if a.schema
-                   else Path(__file__).resolve().parent.parent / "schema" / "panorama-schema.json")
     try:
-        with open(schema_path, encoding="utf-8-sig") as f:
-            schema = json.load(f)
+        schema = load_schema(a.schema)
     except (OSError, json.JSONDecodeError) as e:
-        print(f"cannot load schema ({schema_path}): {e}", file=sys.stderr)
+        print(f"cannot load schema: {e}", file=sys.stderr)
         sys.exit(2)
-    resources = schema["resources"]
     schema_version = schema.get("panosVersion", "unknown")
 
-    v = Validator()
+    findings = []
+    res_name = None
 
-    # version binding
     if a.panos_version and a.panos_version != schema_version:
-        v.add("error", "(schema)",
-              f"schema is for PAN-OS {schema_version}, but target is {a.panos_version}")
+        findings.append({"level": "error", "path": "(schema)", "phase": "set",
+                         "message": f"schema is for PAN-OS {schema_version}, but target is {a.panos_version}"})
 
-    res_name = resolve_resource(resources, a.xpath, a.resource)
-
-    root = None
     try:
         root = ET.parse(a.xml).getroot() if a.xml else ET.fromstring(a.xml_string)
     except (ET.ParseError, OSError) as e:
-        v.add("error", a.xpath, f"XML not parseable: {e}")
+        findings.append({"level": "error", "path": a.xpath, "phase": "set",
+                         "message": f"XML not parseable: {e}"})
+        root = None
 
     if root is not None:
-        if not res_name:
+        res_name, fs = validate_entry(schema, a.xpath, root, a.resource)
+        if res_name is None and not fs:
             container = re.sub(r"/entry$", "", strip_pred(a.xpath))
-            v.add("error", a.xpath, f"unknown/unsupported target XPath (container "
-                                    f"'{container}'). Known: {', '.join(resources)}")
-        else:
-            if root.tag != "entry":
-                v.add("error", a.xpath, f"root element is '{root.tag}', expected 'entry'")
-            if not (root.get("name") or "").strip():
-                v.add("error", a.xpath, "entry without a (non-empty) name attribute")
-            v.test_node(root, resources[res_name], f"entry[{root.get('name')}]")
+            findings.append({"level": "error", "path": a.xpath, "phase": "set",
+                             "message": f"unknown/unsupported target XPath (container '{container}'). "
+                                        f"Known: {', '.join(schema['resources'])}"})
+        findings.extend(fs)
 
-    errors = [f for f in v.findings if f["level"] == "error"]
-    warnings = [f for f in v.findings if f["level"] == "warning"]
+    errors = [f for f in findings if f["level"] == "error"]
+    warnings = [f for f in findings if f["level"] == "warning"]
     passed = not errors
 
     if a.json:
         print(json.dumps({"pass": passed, "resource": res_name,
                           "panosVersion": schema_version, "xpath": a.xpath,
-                          "findings": v.findings}, indent=2, ensure_ascii=False))
+                          "findings": findings}, indent=2, ensure_ascii=False))
     else:
         print(f"resource: {res_name or '<unknown>'} (PAN-OS {schema_version})")
         for f in warnings:
-            print(f"  [warning] {f['path']}: {f['message']}")
+            print(f"  [warning/{f['phase']}] {f['path']}: {f['message']}")
         if passed:
             suffix = f" ({len(warnings)} warning(s))" if warnings else ""
             print(f"PASS - no schema violations.{suffix}")
         else:
             print(f"FAIL - {len(errors)} violation(s):")
             for f in errors:
-                print(f"  [error] {f['path']}: {f['message']}")
+                print(f"  [error/{f['phase']}] {f['path']}: {f['message']}")
     sys.exit(0 if passed else 1)
 
 
