@@ -31,6 +31,9 @@ jobs:
       - name: Validator regression tests
         run: python tools/test_validator.py
 
+      - name: Mock server tests
+        run: python mock/test_mock.py
+
   schema-drift:
     runs-on: ubuntu-latest
     steps:
