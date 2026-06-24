@@ -1,7 +1,7 @@
 # GitHub Pages (Jekyll) configuration for the flux documentation site.
 # Built from the /docs folder. Theme: just-the-docs (remote), with Mermaid enabled.
 title: flux
-description: A lightweight firewall GitOps automation skeleton for Palo Alto Panorama.
+description: A lightweight firewall GitOps automation skeleton for Palo Alto Networks Panorama.
 remote_theme: just-the-docs/just-the-docs
 
 url: https://t11z.github.io

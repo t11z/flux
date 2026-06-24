@@ -7,7 +7,7 @@ nav_order: 1
 
 {: .fs-9 }
 
-A lightweight, extensible **firewall GitOps** automation skeleton for Palo Alto **Panorama**.
+A lightweight, extensible **firewall GitOps** automation skeleton for Palo Alto Networks **Panorama**.
 {: .fs-6 .fw-300 }
 
 [Get started](usage.html){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
