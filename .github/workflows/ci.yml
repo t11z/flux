@@ -1,0 +1,42 @@
+# CI for flux. The validator and its tests are Python stdlib-only (no network),
+# so they run anywhere. The schema-drift check re-compiles the schema with
+# PowerShell (preinstalled on the runner) and fails if it differs from what is
+# committed. Actions pinned to commit SHAs (see references/action-pins.md);
+# Dependabot keeps them current.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validator:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.x'
+
+      - name: Validator regression tests
+        run: python tools/test_validator.py
+
+  schema-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Re-compile schema and check for drift
+        shell: pwsh
+        run: |
+          ./tools/build-schema.ps1
+          git diff --exit-code -- schema/panorama-schema.json schema/versions

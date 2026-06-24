@@ -1,0 +1,32 @@
+# --- flux: secrets & local artifacts ---
+# Niemals Credentials/Keys ins Repo
+*.key
+*apikey*
+*api-key*
+.panrc
+*.secret
+.env
+.env.*
+secrets/
+local.settings.*
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
+# PowerShell / Tooling temp
+*.log
+tmp/
+scratch/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Claude Code (personal overrides)
+CLAUDE.local.md
+.claude/settings.local.json

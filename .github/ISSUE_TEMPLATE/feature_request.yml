@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a change or addition
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: The need or limitation this addresses. Start from the problem, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed direction
+      description: Optional. Note if you think this touches an architectural boundary (it may need an ADR).
+    validations:
+      required: false
+  - type: checkboxes
+    id: adr
+    attributes:
+      label: Architecture
+      options:
+        - label: This may require an ADR (hard to reverse / spans layers / public interface / contract / pins an invariant·provider·stack building block)
