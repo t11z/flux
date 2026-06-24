@@ -46,3 +46,23 @@ intentionally left out of the ADR set as non-architectural.
 
 **Two-layer model.** flux is *developed* on **GitHub** (repo CI). The *delivered/demonstrated* GitOps
 runs on **GitLab + a local runner** (skeleton templates in the repo).
+
+## 2026-06-24 - Phase 2: Mock Panorama server
+
+**Goal.** A lightweight mock Panorama (XML-API) so the pipeline can run end to end without a real,
+licensed device.
+
+**Done.**
+- Refactored `tools/validate_config.py`: findings now carry a `phase` (`set` vs `commit`), and a
+  reusable `validate_entry()` / `load_schema()` API. CLI behaviour unchanged (14/14 still green).
+- `mock/panorama_mock.py` (Python stdlib `http.server`): keygen, config set/edit/get/show/delete,
+  op (`show system info`, `validate full` + job poll, `commit`), in-memory candidate/running trees,
+  optional `--seed`, and an audit log. Set-time violations are rejected on `set`; required/choice
+  checks run at `validate full` / `commit` — mirroring the real device. Validation reuses the gate,
+  so the mock and the gate never drift (ADR-0004).
+- `mock/test_mock.py`: end-to-end over HTTP, **13/13 green** (set-time rejection, accept-incomplete,
+  validate-full catches missing port, commit -> running, delete, system info). Added to CI.
+
+**Open / next.**
+- Later phases: Terraform modules driving the mock, GitLab pipeline (`examples/gitlab/`),
+  optional TLS on the mock so the PowerShell `pan-api.ps1` (HTTPS) can target it directly.
