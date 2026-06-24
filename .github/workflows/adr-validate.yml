@@ -5,9 +5,11 @@ on:
   push:
     paths:
       - 'docs/decisions/**'
+      - '.github/workflows/adr-validate.yml'
   pull_request:
     paths:
       - 'docs/decisions/**'
+      - '.github/workflows/adr-validate.yml'
 
 permissions:
   contents: read
@@ -24,3 +26,6 @@ jobs:
         with:
           path: docs/decisions
           strict: 'false'
+          # Only validate numbered ADR files; skip README.md (index) and
+          # adr-template.md (template with intentional {{placeholders}}).
+          pattern: '[0-9][0-9][0-9][0-9]-*.md'
