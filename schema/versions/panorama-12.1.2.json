@@ -1,0 +1,297 @@
+﻿{
+    "$comment":  "flux Panorama XML-API schema - curated from constraint probing + fixtures. Single source of truth for validate_config.py.",
+    "target":  "panorama",
+    "panosVersion":  "12.1.2",
+    "api":  "xml",
+    "deviceXPathRoot":  "/config/devices/entry[@name=\u0027localhost.localdomain\u0027]",
+    "note":  "containers are predicate-stripped (no [@name=...]). \u0027set\u0027 enforces enums/format/unknown elements but NOT required/choice - flux checks those itself. choice (oneOf): zero=error, more-than-one=warning (PAN-OS keeps one).",
+    "formats":  {
+                    "ip-netmask":  "IPv4/IPv6, optional /prefix",
+                    "ip-range":  "IP-IP",
+                    "fqdn":  "DNS name",
+                    "port-spec":  "port 1-65535, range a-b or list a,b (no 0 / \u003e65535)"
+                },
+    "resources":  {
+                      "address":  {
+                                      "containers":  [
+                                                         "/config/shared/address",
+                                                         "/config/devices/entry/device-group/entry/address"
+                                                     ],
+                                      "allowedChildren":  [
+                                                              "ip-netmask",
+                                                              "ip-range",
+                                                              "ip-wildcard",
+                                                              "fqdn",
+                                                              "description",
+                                                              "tag",
+                                                              "disable-override"
+                                                          ],
+                                      "oneOf":  [
+                                                    [
+                                                        "ip-netmask",
+                                                        "ip-range",
+                                                        "ip-wildcard",
+                                                        "fqdn"
+                                                    ]
+                                                ],
+                                      "formats":  {
+                                                      "ip-netmask":  "ip-netmask",
+                                                      "ip-range":  "ip-range",
+                                                      "fqdn":  "fqdn"
+                                                  },
+                                      "memberlists":  [
+                                                          "tag"
+                                                      ],
+                                      "required":  [
+
+                                                   ]
+                                  },
+                      "service":  {
+                                      "containers":  [
+                                                         "/config/shared/service",
+                                                         "/config/devices/entry/device-group/entry/service"
+                                                     ],
+                                      "allowedChildren":  [
+                                                              "protocol",
+                                                              "description",
+                                                              "tag"
+                                                          ],
+                                      "required":  [
+                                                       "protocol"
+                                                   ],
+                                      "memberlists":  [
+                                                          "tag"
+                                                      ],
+                                      "nested":  {
+                                                     "protocol":  {
+                                                                      "allowedChildren":  [
+                                                                                              "tcp",
+                                                                                              "udp",
+                                                                                              "sctp"
+                                                                                          ],
+                                                                      "oneOf":  [
+                                                                                    [
+                                                                                        "tcp",
+                                                                                        "udp",
+                                                                                        "sctp"
+                                                                                    ]
+                                                                                ],
+                                                                      "nested":  {
+                                                                                     "tcp":  {
+                                                                                                 "allowedChildren":  [
+                                                                                                                         "port",
+                                                                                                                         "source-port",
+                                                                                                                         "override"
+                                                                                                                     ],
+                                                                                                 "required":  [
+                                                                                                                  "port"
+                                                                                                              ],
+                                                                                                 "formats":  {
+                                                                                                                 "port":  "port-spec",
+                                                                                                                 "source-port":  "port-spec"
+                                                                                                             }
+                                                                                             },
+                                                                                     "udp":  {
+                                                                                                 "allowedChildren":  [
+                                                                                                                         "port",
+                                                                                                                         "source-port",
+                                                                                                                         "override"
+                                                                                                                     ],
+                                                                                                 "required":  [
+                                                                                                                  "port"
+                                                                                                              ],
+                                                                                                 "formats":  {
+                                                                                                                 "port":  "port-spec",
+                                                                                                                 "source-port":  "port-spec"
+                                                                                                             }
+                                                                                             },
+                                                                                     "sctp":  {
+                                                                                                  "allowedChildren":  [
+                                                                                                                          "port",
+                                                                                                                          "source-port"
+                                                                                                                      ],
+                                                                                                  "required":  [
+                                                                                                                   "port"
+                                                                                                               ],
+                                                                                                  "formats":  {
+                                                                                                                  "port":  "port-spec",
+                                                                                                                  "source-port":  "port-spec"
+                                                                                                              }
+                                                                                              }
+                                                                                 }
+                                                                  }
+                                                 }
+                                  },
+                      "address-group":  {
+                                            "containers":  [
+                                                               "/config/shared/address-group",
+                                                               "/config/devices/entry/device-group/entry/address-group"
+                                                           ],
+                                            "allowedChildren":  [
+                                                                    "static",
+                                                                    "dynamic",
+                                                                    "description",
+                                                                    "tag"
+                                                                ],
+                                            "oneOf":  [
+                                                          [
+                                                              "static",
+                                                              "dynamic"
+                                                          ]
+                                                      ],
+                                            "memberlists":  [
+                                                                "static",
+                                                                "tag"
+                                                            ],
+                                            "nested":  {
+                                                           "dynamic":  {
+                                                                           "allowedChildren":  [
+                                                                                                   "filter"
+                                                                                               ],
+                                                                           "required":  [
+                                                                                            "filter"
+                                                                                        ]
+                                                                       }
+                                                       }
+                                        },
+                      "security-rule":  {
+                                            "containers":  [
+                                                               "/config/devices/entry/device-group/entry/pre-rulebase/security/rules",
+                                                               "/config/devices/entry/device-group/entry/post-rulebase/security/rules"
+                                                           ],
+                                            "allowedChildren":  [
+                                                                    "from",
+                                                                    "to",
+                                                                    "source",
+                                                                    "destination",
+                                                                    "source-user",
+                                                                    "application",
+                                                                    "service",
+                                                                    "category",
+                                                                    "action",
+                                                                    "description",
+                                                                    "disabled",
+                                                                    "log-start",
+                                                                    "log-end",
+                                                                    "log-setting",
+                                                                    "rule-type",
+                                                                    "tag",
+                                                                    "negate-source",
+                                                                    "negate-destination",
+                                                                    "profile-setting",
+                                                                    "hip-profiles",
+                                                                    "uuid"
+                                                                ],
+                                            "required":  [
+                                                             "from",
+                                                             "to",
+                                                             "source",
+                                                             "destination",
+                                                             "application",
+                                                             "service",
+                                                             "action"
+                                                         ],
+                                            "memberlists":  [
+                                                                "from",
+                                                                "to",
+                                                                "source",
+                                                                "destination",
+                                                                "source-user",
+                                                                "application",
+                                                                "service",
+                                                                "category",
+                                                                "tag",
+                                                                "hip-profiles"
+                                                            ],
+                                            "enums":  {
+                                                          "action":  [
+                                                                         "allow",
+                                                                         "deny",
+                                                                         "drop",
+                                                                         "reset-client",
+                                                                         "reset-server",
+                                                                         "reset-both"
+                                                                     ],
+                                                          "disabled":  [
+                                                                           "yes",
+                                                                           "no"
+                                                                       ],
+                                                          "log-start":  [
+                                                                            "yes",
+                                                                            "no"
+                                                                        ],
+                                                          "log-end":  [
+                                                                          "yes",
+                                                                          "no"
+                                                                      ],
+                                                          "rule-type":  [
+                                                                            "universal",
+                                                                            "intrazone",
+                                                                            "interzone"
+                                                                        ],
+                                                          "negate-source":  [
+                                                                                "yes",
+                                                                                "no"
+                                                                            ],
+                                                          "negate-destination":  [
+                                                                                     "yes",
+                                                                                     "no"
+                                                                                 ]
+                                                      }
+                                        },
+                      "device-group":  {
+                                           "containers":  [
+                                                              "/config/devices/entry/device-group"
+                                                          ],
+                                           "allowedChildren":  [
+                                                                   "description",
+                                                                   "address",
+                                                                   "address-group",
+                                                                   "service",
+                                                                   "service-group",
+                                                                   "tag",
+                                                                   "pre-rulebase",
+                                                                   "post-rulebase",
+                                                                   "devices",
+                                                                   "reference-templates"
+                                                               ],
+                                           "required":  [
+
+                                                        ]
+                                       },
+                      "template":  {
+                                       "containers":  [
+                                                          "/config/devices/entry/template"
+                                                      ],
+                                       "allowedChildren":  [
+                                                               "description",
+                                                               "config",
+                                                               "settings",
+                                                               "variable"
+                                                           ],
+                                       "required":  [
+
+                                                    ]
+                                   },
+                      "template-stack":  {
+                                             "containers":  [
+                                                                "/config/devices/entry/template-stack"
+                                                            ],
+                                             "allowedChildren":  [
+                                                                     "templates",
+                                                                     "description",
+                                                                     "devices",
+                                                                     "settings",
+                                                                     "variable"
+                                                                 ],
+                                             "required":  [
+                                                              "templates",
+                                                              "settings"
+                                                          ],
+                                             "memberlists":  [
+                                                                 "templates",
+                                                                 "devices"
+                                                             ]
+                                         }
+                  }
+}

@@ -1,0 +1,4 @@
+﻿<entry name="flux-web-srv">
+  <ip-netmask>10.10.10.10/32</ip-netmask>
+  <description>flux seed address</description>
+</entry>

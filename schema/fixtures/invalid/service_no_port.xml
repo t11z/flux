@@ -1,0 +1,5 @@
+<entry name="bad-svc">
+  <protocol>
+    <tcp></tcp>
+  </protocol>
+</entry>

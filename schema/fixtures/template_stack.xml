@@ -1,0 +1,7 @@
+﻿<entry name="flux-stack">
+  <templates>
+    <member>flux-tpl</member>
+  </templates>
+  <settings />
+  <description>flux demo stack</description>
+</entry>

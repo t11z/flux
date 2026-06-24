@@ -1,0 +1,3 @@
+<entry name="no-type">
+  <description>this slips past the XML-API set, but flux must reject it</description>
+</entry>
