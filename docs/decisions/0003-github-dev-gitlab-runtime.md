@@ -9,10 +9,9 @@ created: 2026-06-24
 updated: 2026-06-24
 author: "Thomas Sprock"
 project: flux
-related: [0005-adopt-cc-project-bootstrap-conventions.md]
 ---
 
-# ADR-0004: Develop on GitHub, Run the Delivered GitOps on GitLab
+# ADR-0003: Develop on GitHub, Run the Delivered GitOps on GitLab
 
 ## Status
 
@@ -23,13 +22,13 @@ Accepted
 ### Background and Problem Statement
 
 flux has two distinct CI/CD concerns that are easy to conflate: the CI that develops flux
-itself, and the GitOps pipeline that flux *demonstrates and ships*. The repository bootstrap
-(ADR-0005) provides GitHub Actions, while the firewall-automation use case targets GitLab with a
-self-hosted runner. Treating these as one would create a false mismatch.
+itself, and the GitOps pipeline that flux *demonstrates and ships*. The repository's CI is
+GitHub-native, while the firewall-automation use case targets GitLab with a self-hosted runner.
+Treating these as one would create a false mismatch.
 
 ### Current Limitations
 
-1. The bootstrap's CI is GitHub-native (OAuth workflows, App tokens).
+1. The repository CI is GitHub-native (OAuth workflows, App tokens).
 2. The product's GitOps target is GitLab + a local runner.
 
 ## Decision Drivers
@@ -77,20 +76,20 @@ templates inside the repo (`examples/gitlab/`), wired to a local runner in later
 - One CI system.
 
 **Disadvantages**:
-- Discards the bootstrap's GitHub-native automation (smADR validation, OAuth security review,
+- Discards the GitHub-native development automation (smADR validation, OAuth security review,
   triage bot) that is wanted for development.
 
 **Risk Assessment**:
 - **Technical Risk**: Low.
-- **Schedule Risk**: Medium. Re-implementing the bootstrap automation on GitLab.
+- **Schedule Risk**: Medium. Re-implementing the development automation on GitLab.
 - **Ecosystem Risk**: Medium.
 
 **Disqualifying Factor**: Throws away the chosen GitHub development automation.
 
 ## Decision
 
-flux is **developed on GitHub** (the bootstrap's workflows are real, active repo CI). The
-**delivered GitOps runs on GitLab + a local runner** and lives as skeleton templates in the repo.
+flux is **developed on GitHub** (the repo workflows are real, active CI). The **delivered GitOps
+runs on GitLab + a local runner** and lives as skeleton templates in the repo.
 
 The implementation will use:
 - **`.github/workflows/`** for development CI.
@@ -120,7 +119,7 @@ Mitigations:
 
 ## Related Decisions
 
-- [ADR-0005: Adopt cc-project-bootstrap Conventions](0005-adopt-cc-project-bootstrap-conventions.md) - source of the GitHub automation.
+- [ADR-0001: Target the Panorama XML-API](0001-target-the-panorama-xml-api.md) - the interface the delivered pipeline drives.
 
 ## Links
 
@@ -130,7 +129,7 @@ Mitigations:
 
 - **Date:** 2026-06-24
 - **Source:** Project framing in the Engram `flux` note.
-- **Related ADRs:** ADR-0005.
+- **Related ADRs:** ADR-0001.
 
 ## Audit
 

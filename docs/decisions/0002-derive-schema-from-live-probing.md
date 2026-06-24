@@ -126,7 +126,6 @@ Mitigations:
 ## Related Decisions
 
 - [ADR-0001: Target the Panorama XML-API](0001-target-the-panorama-xml-api.md) - why there is no OpenAPI source.
-- [ADR-0003: Python Validator as the Gate](0003-python-validator-gate.md) - what consumes the schema.
 
 ## Links
 
@@ -136,7 +135,7 @@ Mitigations:
 
 - **Date:** 2026-06-24
 - **Source:** Discovery against Panorama 12.1.2; see `schema/constraints/probe-results.md`.
-- **Related ADRs:** ADR-0001, ADR-0003.
+- **Related ADRs:** ADR-0001.
 
 ## Audit
 

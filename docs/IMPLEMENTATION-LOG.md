@@ -35,9 +35,10 @@ a lightweight "validate before apply" gate from it.
 (`CLAUDE.md`, `tools/CLAUDE.md`), smADR scaffold in `docs/decisions/`, `.claude/` commands/agents/
 ADR-skill, `.github/` workflows (CI adapted to the flux stack: Python tests + schema-drift check;
 security-review, adr-validate, issue-triage) with SHA-pinned actions, issue/PR templates,
-Dependabot, `SETUP.md`. AIRS declined. Recorded the core decisions as **smADR 0001-0005**
-(XML-API only · schema from live probing/version-bound · Python gate / PowerShell discovery ·
-GitHub dev / GitLab runtime · adopt cc-project-bootstrap).
+Dependabot, `SETUP.md`. AIRS declined. Recorded the core architecture decisions as **smADR
+0001-0003** (XML-API only · version-bound schema as source of truth · GitHub dev / GitLab
+runtime). Implementation/tooling choices (validator language, adopting the bootstrap) were
+intentionally left out of the ADR set as non-architectural.
 
 **Open / next.**
 - Architect: configure CI secrets per `SETUP.md` (`CLAUDE_CODE_OAUTH_TOKEN`, GitHub App).

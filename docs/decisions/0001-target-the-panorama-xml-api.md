@@ -131,7 +131,7 @@ Mitigations:
 
 - **Date:** 2026-06-24
 - **Source:** Live discovery against Panorama 12.1.2.
-- **Related ADRs:** ADR-0002, ADR-0003.
+- **Related ADRs:** ADR-0002.
 
 ## Audit
 
