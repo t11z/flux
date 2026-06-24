@@ -1,0 +1,4 @@
+<entry name="bad-addr">
+  <ip-netmask>10.0.0.1/32</ip-netmask>
+  <fqdn>example.com</fqdn>
+</entry>

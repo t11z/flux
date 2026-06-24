@@ -1,0 +1,120 @@
+# Issue & PR triage bot — anthropics/claude-code-action authenticated via
+# CLAUDE_CODE_OAUTH_TOKEN, acting as a GitHub App (real bot identity, triggers
+# downstream CI on created PRs). See references/auth-oauth.md.
+#
+# Behaviour:
+#   - triage job: AUTO on opened issues & PRs — label, comment, and check whether
+#     the request demands an ADR-breaking change (per the project's ADR criteria);
+#     if so, comment and close.
+#   - implement job: GATED — only when a MAINTAINER comments "@claude implement"
+#     on an issue. Because the App token bypasses the action's built-in actor
+#     check, we gate with an explicit permission step.
+
+name: Issue Triage
+
+on:
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  # ---- AUTO triage on new issues and PRs ----
+  triage:
+    if: github.event_name == 'issues' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Triage
+        uses: anthropics/claude-code-action@ebcdfe6dc6bb7511eb63e59e07df256dbcf59a2e # v1.0.145
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.app-token.outputs.token }}
+          prompt: |
+            You are the triage bot for this repository. A new ${{ github.event_name == 'issues' && 'issue' || 'pull request' }} was opened (#${{ github.event.issue.number || github.event.pull_request.number }}).
+
+            Do the following, in order:
+
+            1. Read the issue/PR title and body. Summarise the request in one sentence in a comment.
+            2. Apply appropriate labels (type, area, priority) based on the content.
+            3. ADR-breaking check. Read docs/decisions/. Determine whether honouring this request would require a decision that is hard to reverse, spans multiple layers / a public interface / a contract, pins or changes an invariant / provider / stack building block, or contradicts (supersedes) an accepted ADR. If yes:
+               - Comment explaining which ADR(s) or which architectural boundary is affected, and that this requires an ADR in `proposed` status (superseding the relevant accepted ADR if applicable) before it can proceed.
+               - Apply the label `needs-adr` and CLOSE the issue.
+               - Do NOT open a PR.
+            4. If the request is a clear, well-scoped, non-ADR-breaking change, note in your comment that a maintainer can trigger implementation with `@claude implement`. Do NOT open a PR yourself in this job.
+
+            Write all comments in English. Be concise and concrete. Do not invent ADR references — cite only ADRs that actually exist in docs/decisions/.
+          claude_args: '--model claude-opus-4-8'
+
+  # ---- GATED implementation on maintainer request ----
+  implement:
+    if: >
+      github.event_name == 'issue_comment' &&
+      !github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@claude implement')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify commenter is a maintainer
+        id: perm
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.payload.comment.user.login,
+            });
+            const ok = ['admin', 'maintain', 'write'].includes(data.permission);
+            core.info(`Commenter ${context.payload.comment.user.login} permission: ${data.permission}`);
+            if (!ok) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number,
+                body: `@${context.payload.comment.user.login} only maintainers (write access) can trigger \`@claude implement\`.`,
+              });
+              core.setFailed('Commenter lacks write permission.');
+            }
+
+      - name: Generate app token
+        if: steps.perm.outcome == 'success'
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        if: steps.perm.outcome == 'success'
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Implement and open PR
+        if: steps.perm.outcome == 'success'
+        uses: anthropics/claude-code-action@ebcdfe6dc6bb7511eb63e59e07df256dbcf59a2e # v1.0.145
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.app-token.outputs.token }}
+          prompt: |
+            A maintainer asked you to implement issue #${{ github.event.issue.number }}.
+
+            1. Re-check the ADR-breaking criteria (hard to reverse; spans layers / public interface / contract; pins an invariant / provider / stack building block; supersedes an accepted ADR). If it IS ADR-breaking, do NOT implement: comment that an ADR (`proposed`) is required first, apply `needs-adr`, and stop.
+            2. Otherwise implement the change on a new branch, keeping it minimal and focused on the issue. Follow the repository's CLAUDE.md conventions. Repository artifacts in English.
+            3. If the change qualifies for an ADR on its own merits, add one under docs/decisions/ using the project's adr-write skill before or alongside the code.
+            4. Open a pull request that references issue #${{ github.event.issue.number }} and summarises what changed and why.
+          claude_args: '--model claude-opus-4-8'

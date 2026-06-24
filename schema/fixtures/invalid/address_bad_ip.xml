@@ -1,0 +1,3 @@
+<entry name="bad-ip">
+  <ip-netmask>not-an-ip</ip-netmask>
+</entry>

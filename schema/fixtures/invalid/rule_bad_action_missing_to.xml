@@ -1,0 +1,8 @@
+<entry name="bad-rule">
+  <from><member>any</member></from>
+  <source><member>any</member></source>
+  <destination><member>any</member></destination>
+  <application><member>any</member></application>
+  <service><member>application-default</member></service>
+  <action>permit</action>
+</entry>

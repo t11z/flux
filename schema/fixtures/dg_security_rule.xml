@@ -1,0 +1,24 @@
+﻿<entry name="flux-allow-web">
+  <from>
+    <member>any</member>
+  </from>
+  <to>
+    <member>any</member>
+  </to>
+  <source>
+    <member>any</member>
+  </source>
+  <destination>
+    <member>flux-web-srv</member>
+  </destination>
+  <source-user>
+    <member>any</member>
+  </source-user>
+  <application>
+    <member>web-browsing</member>
+  </application>
+  <service>
+    <member>application-default</member>
+  </service>
+  <action>allow</action>
+</entry>

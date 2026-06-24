@@ -1,0 +1,150 @@
+# Security Review — OAuth rewire of anthropics/claude-code-security-review.
+#
+# The upstream action requires ANTHROPIC_API_KEY and hard-blocks without it.
+# We never use ANTHROPIC_API_KEY. Instead we replicate its scan steps, patch the
+# presence-guard to accept CLAUDE_CODE_OAUTH_TOKEN, and run with the Claude-based
+# false-positive filtering OFF (that layer needs a raw x-api-key, which an OAuth
+# token cannot satisfy; deterministic filtering stays on). See references/auth-oauth.md.
+#
+# The upstream action is NOT hardened against prompt injection. This workflow runs
+# only on same-repo PRs (not forks). Keep "Require approval for external contributors"
+# enabled in repo settings.
+
+name: Security Review
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  security-review:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+          path: repo
+
+      - name: Checkout security-review action (pinned)
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          repository: anthropics/claude-code-security-review
+          ref: 0c6a49f1fa56a1d472575da86a94dbc1edb78eda # main (no release; commit pin)
+          path: action
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.x'
+
+      - name: Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          pip install -r action/claudecode/requirements.txt
+          npm install -g @anthropic-ai/claude-code
+          sudo apt-get update && sudo apt-get install -y jq gh
+
+      - name: Patch presence-guard for OAuth
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys
+          p = pathlib.Path("action/claudecode/github_action_audit.py")
+          s = p.read_text()
+          needle = (
+              "api_key = os.environ.get('ANTHROPIC_API_KEY', '')\n"
+              "                if not api_key:\n"
+              "                    return False, \"ANTHROPIC_API_KEY environment variable is not set\""
+          )
+          repl = (
+              "api_key = os.environ.get('ANTHROPIC_API_KEY', '') or os.environ.get('CLAUDE_CODE_OAUTH_TOKEN', '')\n"
+              "                if not api_key:\n"
+              "                    return False, \"Neither ANTHROPIC_API_KEY nor CLAUDE_CODE_OAUTH_TOKEN is set\""
+          )
+          if needle not in s:
+              print("PATCH FAILED: upstream guard block not found at the pinned commit.", file=sys.stderr)
+              print("Re-review github_action_audit.py and update the needle, or bump the pin deliberately.", file=sys.stderr)
+              sys.exit(1)
+          p.write_text(s.replace(needle, repl))
+          print("OAuth guard patched.")
+          PY
+
+      - name: Run security audit (OAuth)
+        id: scan
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ENABLE_CLAUDE_FILTERING: 'false'
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          export REPO_PATH="$GITHUB_WORKSPACE/repo"
+          cd action
+          export PYTHONPATH="$(pwd):${PYTHONPATH}"
+          python -u claudecode/github_action_audit.py \
+            > "$GITHUB_WORKSPACE/results.json" 2> "$GITHUB_WORKSPACE/audit-error.log" \
+            || echo "::warning::audit exited non-zero (see audit-error.log)"
+          cd "$GITHUB_WORKSPACE"
+          if jq -e '.findings' results.json >/dev/null 2>&1; then
+            COUNT=$(jq -r '.findings | length' results.json)
+          else
+            COUNT=0
+            echo "::warning::no parseable findings array; check audit-error.log"
+            cat audit-error.log || true
+          fi
+          echo "findings_count=$COUNT" >> "$GITHUB_OUTPUT"
+          jq '.findings // []' results.json > findings.json 2>/dev/null || echo '[]' > findings.json
+
+      - name: Comment findings on PR
+        if: always()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            let findings = [];
+            try { findings = JSON.parse(fs.readFileSync('findings.json', 'utf8')); } catch (e) {}
+            if (!Array.isArray(findings) || findings.length === 0) {
+              core.info('No security findings to report.');
+              return;
+            }
+            const lines = findings.map((f, i) => {
+              const loc = [f.file, f.line].filter(Boolean).join(':');
+              const sev = f.severity ? `**${f.severity}** ` : '';
+              const title = f.title || f.description || 'Finding';
+              const detail = f.explanation || f.description || '';
+              const fix = f.recommendation || f.remediation || '';
+              return `### ${i + 1}. ${sev}${title}\n` +
+                     (loc ? `\`${loc}\`\n\n` : '') +
+                     (detail ? `${detail}\n\n` : '') +
+                     (fix ? `**Remediation:** ${fix}\n` : '');
+            });
+            const body = `## Security Review — ${findings.length} finding(s)\n\n` +
+                         `Authenticated via \`CLAUDE_CODE_OAUTH_TOKEN\` (deterministic FP-filtering).\n\n` +
+                         lines.join('\n---\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });
+
+      - name: Upload audit artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: security-review-results
+          path: |
+            results.json
+            findings.json
+            audit-error.log
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,8 @@
+﻿<entry name="flux-tcp-8080">
+  <protocol>
+    <tcp>
+      <port>8080</port>
+    </tcp>
+  </protocol>
+  <description>flux seed service</description>
+</entry>

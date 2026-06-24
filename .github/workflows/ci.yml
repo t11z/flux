@@ -1,0 +1,59 @@
+# CI for flux. The validator and its tests are Python stdlib-only (no network),
+# so they run anywhere. The schema-drift check re-compiles the schema with
+# PowerShell and compares it to the committed one SEMANTICALLY (JSON equality),
+# so it is robust against serialization differences between Windows PowerShell
+# 5.1 (developer) and Linux pwsh 7 (runner) — BOM, escaping, line endings.
+# Actions pinned to commit SHAs (see references/action-pins.md); Dependabot
+# keeps them current.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validator:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.x'
+
+      - name: Validator regression tests
+        run: python tools/test_validator.py
+
+  schema-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.x'
+
+      - name: Re-compile schema
+        shell: pwsh
+        run: ./tools/build-schema.ps1 -OutFile $env:RUNNER_TEMP/rebuilt.json
+
+      - name: Check for semantic drift
+        run: |
+          python - <<'PY'
+          import json, os, sys
+          committed = json.load(open("schema/panorama-schema.json", encoding="utf-8-sig"))
+          rebuilt = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "rebuilt.json"), encoding="utf-8-sig"))
+          if committed != rebuilt:
+              print("Schema drift: committed schema differs from a fresh compile.", file=sys.stderr)
+              sys.exit(1)
+          print("No semantic schema drift.")
+          PY

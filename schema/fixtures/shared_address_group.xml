@@ -1,0 +1,5 @@
+﻿<entry name="flux-web-grp">
+  <static>
+    <member>flux-web-srv</member>
+  </static>
+</entry>
