@@ -63,8 +63,11 @@ The jobs need **`terraform` + `python3` (stdlib only) + `curl`** on `PATH`.
 
 - **gitlab.com shared runners:** the shipped `.gitlab-ci.yml` works out of the box — it uses
   `python:3.12-slim` and fetches a pinned `terraform` binary in `before_script`.
-- **Self-hosted runner:** if your image already bundles all three, drop the `before_script`
-  and set `default.image` to that tag.
+- **Self-hosted runner:** with the **Docker executor**, the host needs only Docker +
+  `gitlab-runner` — the per-job tools come from the image + `before_script`, so the shipped
+  `.gitlab-ci.yml` runs unchanged. Full Ubuntu walkthrough (using `docker.io`):
+  [RUNNER-SETUP.md](RUNNER-SETUP.md). If your image already bundles terraform + python3 + curl,
+  drop the `before_script` and set `default.image` to that tag.
 
 > ⚠️ **Do not use `hashicorp/terraform` (Alpine) + `apk add python3`.** Alpine's packaged
 > python3 ships a `pyexpat` linked against a newer `expat` than the image carries, so
