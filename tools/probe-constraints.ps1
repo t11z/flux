@@ -25,7 +25,14 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'pan-api.ps1')
 $null = Connect-Pan -PanHost $PanHost -User $User -Password $Password
 
-$DG = "/config/devices/entry[@name='localhost.localdomain']/device-group/entry[@name='flux-dg']"
+$DEV  = "/config/devices/entry[@name='localhost.localdomain']"
+$DG   = "$DEV/device-group/entry[@name='flux-dg']"
+$TCFG = "$DEV/template/entry[@name='flux-tpl']/config/devices/entry[@name='localhost.localdomain']"
+
+# Context for the template-interior probes (deleted at the end). The reference probes
+# below deliberately point at a NONEXISTENT interface (ethernet9/9) to show that PAN-OS
+# checks interface references at set time.
+$null = Invoke-PanConfig -Action set -XPath "$DEV/template/entry[@name='flux-tpl']" -Element '<description>flux probe tpl</description>'
 
 $probes = @(
     @{ label='rule action invalid enum'; expect='reject';
@@ -40,6 +47,24 @@ $probes = @(
        xpath="/config/shared/service/entry[@name='flux-probe-svc2']"; element='<protocol><tcp><port>abc</port></tcp></protocol>' }
     @{ label='address missing type (only description)'; expect='accept-at-set';
        xpath="/config/shared/address/entry[@name='flux-probe3']"; element='<description>no type here</description>' }
+    # --- NAT rule (device-group) ---
+    @{ label='nat-rule nat-type invalid enum'; expect='reject';
+       xpath="$DG/pre-rulebase/nat/rules/entry[@name='flux-probe-nat']"; element='<nat-type>bogus</nat-type>' }
+    @{ label='nat-rule unknown child'; expect='reject';
+       xpath="$DG/pre-rulebase/nat/rules/entry[@name='flux-probe-nat']"; element='<bogus>x</bogus>' }
+    @{ label='nat-rule incomplete (only description)'; expect='accept-at-set';
+       xpath="$DG/pre-rulebase/nat/rules/entry[@name='flux-probe-nat2']"; element='<description>missing from/to/...</description>' }
+    # --- template-interior network config ---
+    @{ label='interface unknown child'; expect='reject';
+       xpath="$TCFG/network/interface/ethernet/entry[@name='ethernet1/9']"; element='<bogus/>' }
+    @{ label='interface bad ip format (NOT set-enforced)'; expect='accept-at-set';
+       xpath="$TCFG/network/interface/ethernet/entry[@name='ethernet1/9']"; element='<layer3><ip><entry name="not-an-ip"/></ip></layer3>' }
+    @{ label='zone unknown child'; expect='reject';
+       xpath="$TCFG/vsys/entry[@name='vsys1']/zone/entry[@name='flux-probe-z']"; element='<bogus/>' }
+    @{ label='zone interface reference checked at set'; expect='reject';
+       xpath="$TCFG/vsys/entry[@name='vsys1']/zone/entry[@name='flux-probe-z']"; element='<network><layer3><member>ethernet9/9</member></layer3></network>' }
+    @{ label='virtual-router interface reference checked at set'; expect='reject';
+       xpath="$TCFG/network/virtual-router/entry[@name='flux-probe-vr']"; element='<interface><member>ethernet9/9</member></interface>' }
 )
 
 $rows = foreach ($p in $probes) {
@@ -54,3 +79,7 @@ $rows = foreach ($p in $probes) {
     }
 }
 $rows | Format-List
+
+# tidy up the probe context (candidate only; no commit)
+$null = Invoke-PanConfig -Action delete -XPath "$DEV/template/entry[@name='flux-tpl']"
+$null = Invoke-PanConfig -Action delete -XPath $DG

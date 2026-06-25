@@ -5,8 +5,9 @@ Dated working log (chronology / what + why). Architectural decisions also live a
 
 ## 2026-06-24 - Phase 1: Panorama discovery, schema & validator
 
-**Goal.** Derive a complete schema of the Panorama XML configuration from the live API and build
-a lightweight "validate before apply" gate from it.
+**Goal.** Derive a version-bound schema of the **flux-relevant** Panorama XML resources from the
+live API (a curated subset per ADR-0002, **not** the entire config tree) and build a lightweight
+"validate before apply" gate from it.
 
 **Done.**
 - Verified the live Panorama: **12.1.2**, `management-only`, `192.168.99.2` (XML-API reachable,
@@ -66,3 +67,42 @@ licensed device.
 **Open / next.**
 - Later phases: Terraform modules driving the mock, GitLab pipeline (`examples/gitlab/`),
   optional TLS on the mock so the PowerShell `pan-api.ps1` (HTTPS) can target it directly.
+
+## 2026-06-25 - Phase 3a: extend schema coverage for the panos provider use cases
+
+**Goal.** Phase 3 targets the official `PaloAltoNetworks/panos` Terraform provider (v2, XML-API)
+for typical firewall-admin use cases spanning **both** Panorama layers: device-group objects/policy
+**and** template network config, plus their interplay (a NAT rule referencing a template interface/
+zone). The Phase 1 curated subset covered device-group objects/security rules and the template
+*shell* only - not the template *interior* (interfaces/zones/virtual-routers) nor NAT rules. The
+live Panorama (still 12.1.2) was re-probed to close that gap **the ADR-0002 way** (seed + probe +
+compare), rather than hand-curating from docs.
+
+**Done.**
+- Re-probed `192.168.99.2` (PAN-OS **12.1.2**, unchanged) and captured canonical fixtures for
+  `ethernet-interface`, `zone`, `virtual-router` (template interior) and `nat-rule` (device-group):
+  `schema/fixtures/template_interface.xml`, `template_zone.xml`, `template_virtual_router.xml`,
+  `template_vsys_import.xml`, `dg_nat_rule.xml`.
+- **Findings:** a zone references an interface only once it is **imported into the vsys**
+  (`.../vsys/entry/import/network/interface`); interface references are checked **at set time**.
+  NAT requires `from/to/source/destination/service` at commit, and NAT `to` cannot be `any`.
+  Interface IP is **not** format-checked at set (the `<ip>` entry may be a named object).
+- Extended `tools/seed-fixtures.ps1`, `tools/probe-constraints.ps1`, `tools/build-schema.ps1`
+  (4 new resources; deep template-interior containers are predicate-stripped) and
+  `tools/compare-validation.ps1`. **No validator code change** - the new resources are pure schema
+  data (allowedChildren/enums/memberlists/nested/required + phase).
+- **Parity re-proven:** `compare-validation.ps1` now **21/21 agree, 0 mismatches**. Validator
+  regression `test_validator.py` **22/22**; `mock/test_mock.py` **13/13** (the mock validates the
+  new resources automatically via the shared schema).
+- **Fixed `tools/pan-api.ps1`:** Windows PowerShell mangled embedded `"` when handing the `element`
+  arg to `curl.exe`, so any payload with quoted attributes (e.g. an interface `<ip><entry name=…/>`)
+  failed as "Malformed Request". XML-bearing values now go through a temp file (`curl name@file`).
+  This never surfaced before because no earlier fixture had a quoted attribute in its body.
+- **Schema JSON reformatted to 2-space** (deterministic, via a best-effort Python pretty-print in
+  `build-schema.ps1` with a raw fallback; CI compares the schema semantically, so formatting is free).
+- Clarified the Phase 1 goal wording above: the schema is a **curated subset** (ADR-0002), never the
+  whole config tree.
+
+**Open / next.** Phase 3b: the panos v2 Terraform modules + examples for the three use cases, the
+mock's `action=multi-config` handler (the provider batches writes), and the full GitLab pipeline
+skeleton (`examples/gitlab/`).

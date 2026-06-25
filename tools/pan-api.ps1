@@ -87,11 +87,31 @@ function Invoke-PanApi {
     if (-not $PanHost) { throw "PanHost missing. Call Connect-Pan first." }
     if (-not $Key)     { throw "No API key. Call Connect-Pan / Get-PanKey first." }
 
-    $curlArgs = @('-k','-s',"https://$PanHost/api/")
-    foreach ($k in $Params.Keys) { $curlArgs += @('--data-urlencode', "$k=$($Params[$k])") }
+    # XML-bearing values (element/cmd) contain double-quoted attributes; Windows
+    # PowerShell mangles embedded quotes when passing args to curl.exe. Route any
+    # markup value through a temp file (curl's name@file form URL-encodes the file
+    # content) so the quoting never crosses the native-process boundary.
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    $tmpFiles  = @()
+    $curlArgs  = @('-k','-s',"https://$PanHost/api/")
+    foreach ($k in $Params.Keys) {
+        $val = [string]$Params[$k]
+        if ($val -match '[<>"&]') {
+            $tmp = [System.IO.Path]::GetTempFileName()
+            [System.IO.File]::WriteAllText($tmp, $val, $utf8NoBom)
+            $tmpFiles += $tmp
+            $curlArgs += @('--data-urlencode', "$k@$tmp")
+        } else {
+            $curlArgs += @('--data-urlencode', "$k=$val")
+        }
+    }
     $curlArgs += @('--data-urlencode', "key=$Key")
 
-    $raw = (& curl.exe @curlArgs) -join "`n"
+    try {
+        $raw = (& curl.exe @curlArgs) -join "`n"
+    } finally {
+        foreach ($f in $tmpFiles) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
+    }
     try { return [xml]$raw }
     catch { throw "response is not XML (check auth/endpoint). Start: $($raw.Substring(0,[Math]::Min(200,$raw.Length)))" }
 }

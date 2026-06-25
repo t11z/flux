@@ -1,0 +1,7 @@
+﻿<entry name="flux-trust">
+  <network>
+    <layer3>
+      <member>ethernet1/1</member>
+    </layer3>
+  </network>
+</entry>

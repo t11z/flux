@@ -9,8 +9,8 @@ everywhere: `/config/devices/entry[@name='localhost.localdomain']`.
 /config
 ├── mgt-config          # admins, password complexity (out of scope)
 ├── devices/entry[@name='localhost.localdomain']
-│   ├── device-group/entry[@name='<DG>']
-│   ├── template/entry[@name='<TPL>']
+│   ├── device-group/entry[@name='<DG>']         # objects, security + NAT rules
+│   ├── template/entry[@name='<TPL>']            # carries a full firewall config subtree
 │   ├── template-stack/entry[@name='<STACK>']
 │   └── ... (deviceconfig, log-collector-group, ...)
 ├── readonly            # EXCLUDED (predefined content)
@@ -26,9 +26,27 @@ everywhere: `/config/devices/entry[@name='localhost.localdomain']`.
 | service          | `/config/shared/service`  ·  `…/device-group/entry[@name='<DG>']/service` |
 | address-group    | `/config/shared/address-group`  ·  `…/device-group/entry[@name='<DG>']/address-group` |
 | security-rule    | `…/device-group/entry[@name='<DG>']/pre-rulebase/security/rules`  ·  `…/post-rulebase/security/rules` |
+| nat-rule         | `…/device-group/entry[@name='<DG>']/pre-rulebase/nat/rules`  ·  `…/post-rulebase/nat/rules` |
 | device-group     | `…/device-group` |
 | template         | `…/template` |
 | template-stack   | `…/template-stack` |
+
+### Template-interior network config
+A template carries a full firewall config subtree; its network objects live under the template's
+**own** config root: `…/template/entry[@name='<TPL>']/config/devices/entry[@name='localhost.localdomain']`
+(abbreviated `<TCFG>`).
+
+| Resource           | Container XPath |
+|--------------------|-----------------|
+| ethernet-interface | `<TCFG>/network/interface/ethernet` |
+| zone               | `<TCFG>/vsys/entry[@name='vsys1']/zone` |
+| virtual-router     | `<TCFG>/network/virtual-router` |
+
+**Ordering / import rule:** a zone (and a virtual router) can only reference an interface that
+exists, and a zone additionally needs the interface **imported into its vsys**
+(`<TCFG>/vsys/entry[@name='vsys1']/import/network/interface`). PAN-OS checks these references **at
+set time**, so the seed order is interface → vsys-import → zone. These cross-object reference
+checks are outside flux's single-entry validator scope (as with security/NAT member references).
 
 ## Element structure (from real fixtures)
 Real, canonical XML forms live under `schema/fixtures/*.xml` (bookkeeping attributes

@@ -1,0 +1,3 @@
+<entry name="nat-incomplete">
+  <description>slips past set, but flux must reject: missing from/to/source/destination</description>
+</entry>

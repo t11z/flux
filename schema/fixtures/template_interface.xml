@@ -1,0 +1,8 @@
+﻿<entry name="ethernet1/1">
+  <layer3>
+    <ip>
+      <entry name="10.0.0.1/24" />
+    </ip>
+  </layer3>
+  <comment>flux seed interface</comment>
+</entry>
