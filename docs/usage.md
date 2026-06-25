@@ -14,6 +14,7 @@ nav_order: 3
 ## Requirements
 
 - **Python 3.x** — the validator and the mock are stdlib-only (no `pip install`).
+- **Terraform** — for the Phase 3 modules in `terraform/` (the `panos` v2 provider).
 - **PowerShell + curl** — only for the discovery tooling that talks to a *real* Panorama.
 
 ## Validate a config fragment (the gate)
@@ -66,11 +67,26 @@ curl -s "http://127.0.0.1:8080/api/" \
 Useful flags: `--seed candidate.xml` preloads a starting config, `--log-file audit.log` records an
 audit trail. State is in-memory by design.
 
+## Apply the use cases with Terraform
+
+The three everyday use cases — publish an application, template network config, and a NAT rule
+that ties the two layers together — are Terraform modules driven by the official `panos` v2
+provider. They run against the mock with no real device:
+
+```bash
+python mock/panorama_mock.py --port 8080 &      # start the mock
+cd terraform && terraform init
+terraform apply -auto-approve -var-file=mock.tfvars.example
+```
+
+Swap in `panorama.tfvars.example` (with `TF_VAR_panos_*` credentials) to target a real Panorama.
+The GitLab delivery pipeline (validate → plan → apply → commit) lives in `examples/gitlab/`.
+
 ## Tests
 
 ```bash
-python tools/test_validator.py   # validator regression (14/14)
-python mock/test_mock.py         # mock end-to-end (13/13)
+python tools/test_validator.py   # validator regression (22/22)
+python mock/test_mock.py         # mock end-to-end (21/21)
 ```
 
 ## Discovery against a real Panorama (PowerShell)

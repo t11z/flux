@@ -48,4 +48,4 @@ validator's verdicts were then checked against Panorama's *own* validation and a
 
 - **Phase 1** — XML-API discovery, version-bound schema, validate-before-apply gate ✅
 - **Phase 2** — mock Panorama XML-API server (end-to-end without a real device) ✅
-- **Phase 3** — Terraform modules + GitLab pipeline ⏳
+- **Phase 3** — Terraform modules (panos v2) + GitLab pipeline ✅
