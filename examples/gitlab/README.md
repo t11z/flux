@@ -7,6 +7,10 @@ provider (v2, XML-API). It is an *inert template* in this repo
 (see [ADR-0003](../../docs/decisions/0003-github-dev-gitlab-runtime.md)) — copy
 `.gitlab-ci.yml` into your delivery repository and adjust.
 
+> **Standing up a real delivery repo on GitLab?** See
+> [DELIVERY-REPO-SETUP.md](DELIVERY-REPO-SETUP.md) for the file subset, the runner-image
+> choice (and the Alpine `expat` pitfall to avoid), CI/CD variables, and the push steps.
+
 ## Flow
 
 ```
