@@ -1,4 +1,9 @@
 // just-the-docs variable overrides (imported before the theme defaults).
 // Widen the content column so the page uses more of the screen on desktop
-// without going full width (default is 800px).
-$content-width: 1200px;
+// without going full width (theme default is 50rem / 800px).
+//
+// Must be in rem, not px: the theme derives its `lg` media-query breakpoint as
+// `$content-width + $nav-width` (both rem). A px value here mixes units and
+// breaks the SCSS build with "Incompatible units: 'px' and 'rem'".
+// 75rem == 1200px at the 16px root font size.
+$content-width: 75rem;
