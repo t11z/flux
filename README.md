@@ -65,11 +65,22 @@ python mock/panorama_mock.py --port 8080 &
 curl -s "http://127.0.0.1:8080/api/?type=keygen&user=admin&password=x"
 ```
 
+**Apply the three use cases with Terraform (against the mock):**
+
+```bash
+python mock/panorama_mock.py --port 8080 &                     # 1. start the mock
+cd terraform && terraform init
+terraform apply -auto-approve -var-file=mock.tfvars.example    # 2. publish-app · template-network · NAT interplay
+```
+
+Point it at a real Panorama by using `panorama.tfvars.example` instead and supplying
+credentials via `TF_VAR_panos_*`. The delivery pipeline lives in [`examples/gitlab/`](examples/gitlab/).
+
 **Run the tests:**
 
 ```bash
-python tools/test_validator.py   # validator regression (14/14)
-python mock/test_mock.py         # mock end-to-end (13/13)
+python tools/test_validator.py   # validator regression (22/22)
+python mock/test_mock.py         # mock end-to-end (21/21)
 ```
 
 The discovery tooling (PowerShell, `tools/*.ps1`) talks to a real Panorama; the gate and mock are
@@ -78,10 +89,12 @@ Python stdlib-only so they run anywhere, including CI.
 ## Repository layout
 
 ```
-tools/    XML-API wrapper, seeding, probing, schema compiler, validator (Python + PowerShell)
-mock/     stdlib mock Panorama XML-API server + end-to-end tests
-schema/   panorama-schema.json (source of truth), fixtures/, constraints/, versions/
-docs/     documentation site (GitHub Pages), decisions/ (smADRs), implementation log
+tools/      XML-API wrapper, seeding, probing, schema compiler, validator (Python + PowerShell)
+mock/       stdlib mock Panorama XML-API server + end-to-end tests
+terraform/  panos v2 provider modules for the three use cases (publish-app, template-network, NAT)
+examples/   GitLab delivery pipeline skeleton (validate → plan → apply → commit)
+schema/     panorama-schema.json (source of truth), fixtures/, constraints/, versions/
+docs/       documentation site (GitHub Pages), decisions/ (smADRs), implementation log
 ```
 
 ## Conventions
@@ -90,5 +103,8 @@ docs/     documentation site (GitHub Pages), decisions/ (smADRs), implementation
   speak), never the REST API. ([ADR-0001](docs/decisions/0001-target-the-panorama-xml-api.md))
 - **The schema is bound to a PAN-OS version** and is the single source of truth.
   ([ADR-0002](docs/decisions/0002-derive-schema-from-live-probing.md))
+- **Apply via the official `panos` v2 provider** over the XML-API; the mock reproduces its wire
+  protocol so the pipeline runs without a device.
+  ([ADR-0005](docs/decisions/0005-use-the-panos-terraform-provider-v2.md))
 - **Repository artifacts are in English.** Architecture decisions live in `docs/decisions/` as
   Structured MADR; see [`CLAUDE.md`](CLAUDE.md).
