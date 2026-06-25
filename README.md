@@ -46,7 +46,7 @@ PAN-OS version**; the validator is proven to agree with Panorama's own validatio
 |------|-------|-------|
 | 1 | XML-API discovery, version-bound schema, validate-before-apply gate | ✅ done |
 | 2 | Mock Panorama XML-API server (end-to-end without a real device) | ✅ done |
-| 3 | Terraform modules + GitLab pipeline (`examples/gitlab/`) | ⏳ planned |
+| 3 | Terraform modules (panos v2) + GitLab pipeline (`examples/gitlab/`) | ✅ done |
 
 ## Quickstart
 

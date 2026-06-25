@@ -10,10 +10,16 @@ responses, and writes an audit log of every request.
 Reuses tools/validate_config.py so the mock and the validate-before-apply gate
 share one schema and one validation implementation.
 
+The API key may be passed as &key= or via the X-PAN-KEY header (the panos Terraform
+provider uses the header).
+
 Supported requests (https://host/api/?...):
   type=keygen&user=&password=                       -> API key
   type=config&action=set&xpath=&element=&key=       -> merge into candidate (set-time validated)
-  type=config&action=edit&xpath=&element=&key=      -> replace node in candidate
+  type=config&action=edit&xpath=&element=&key=      -> replace the node at xpath in candidate
+  type=config&action=multi-config&element=&key=     -> a <multi-configure-request> batch of
+                                                       set/edit/delete ops (the panos provider
+                                                       uses this for policy-rule resources)
   type=config&action=get|show&xpath=&key=           -> read candidate (get) / running (show)
   type=config&action=delete&xpath=&key=             -> delete node from candidate
   type=op&cmd=<show><system><info>...&key=          -> system info
@@ -41,7 +47,25 @@ SEG_RE = re.compile(r"^([^\[]+)(?:\[@([^=]+)='([^']*)'\])?$")
 
 # ---------------- XPath navigation over ElementTree ----------------
 def split_xpath(xpath):
-    return [s for s in xpath.strip("/").split("/") if s]
+    """Split an XPath on '/', but NOT on '/' inside a predicate, so names that
+    contain a slash (e.g. an interface entry[@name='ethernet1/1']) stay intact."""
+    segs, cur, depth = [], [], 0
+    for ch in xpath.strip("/"):
+        if ch == "[":
+            depth += 1
+            cur.append(ch)
+        elif ch == "]":
+            depth -= 1
+            cur.append(ch)
+        elif ch == "/" and depth == 0:
+            if cur:
+                segs.append("".join(cur))
+                cur = []
+        else:
+            cur.append(ch)
+    if cur:
+        segs.append("".join(cur))
+    return [s for s in segs if s]
 
 
 def parse_seg(seg):
@@ -186,54 +210,129 @@ def handle(state, params):
     return resp_error([f"unsupported type '{typ}'"], code="400")
 
 
+def apply_change(state, action, xpath, element):
+    """Apply a single set/edit/delete to the candidate config.
+    Returns (ok, error_lines). Set-time schema violations block the change.
+
+    PAN-OS semantics:
+      set    - merge `element` (inner XML) into the node at xpath (created if absent).
+      edit   - replace the node at xpath with `element` (the full node, e.g. <entry>).
+      delete - remove the node at xpath.
+    """
+    segs = split_xpath(xpath)
+    last_tag, last_attr, last_val = parse_seg(segs[-1])
+    parent_path = "/".join([""] + segs[:-1]) or "/config"
+
+    if action == "delete":
+        parent = navigate(state.candidate, parent_path, create=False)
+        node = navigate(state.candidate, xpath, create=False)
+        if parent is None or node is None:
+            return False, ["No such node"]
+        parent.remove(node)
+        return True, []
+
+    if action == "edit":
+        wrapper = ET.fromstring(f"<_>{element}</_>") if element.strip() else ET.Element("_")
+        kids = list(wrapper)
+        node_el = kids[0] if kids else ET.Element(last_tag)
+        if not kids and last_attr:
+            node_el.set(last_attr, last_val)
+        if node_el.tag == "entry":
+            errs = state.validate_set(xpath, node_el)
+            if errs:
+                return False, [f"{m['path']} -> {m['message']}" for m in errs]
+        parent = navigate(state.candidate, parent_path, create=True)
+        existing = find_child(parent, last_tag, last_attr, last_val)
+        if existing is not None:
+            parent.remove(existing)
+        parent.append(node_el)
+        return True, []
+
+    # action == "set": merge into (created) node, validating the merged entry.
+    target_preview = navigate(state.candidate, xpath, create=False)
+    if target_preview is not None:
+        preview = ET.fromstring(ET.tostring(target_preview, encoding="unicode"))
+    else:
+        preview = ET.Element(last_tag)
+        if last_attr:
+            preview.set(last_attr, last_val)
+    merge_into(preview, element)
+    if preview.tag == "entry":
+        errs = state.validate_set(xpath, preview)
+        if errs:
+            return False, [f"{m['path']} -> {m['message']}" for m in errs]
+    target = navigate(state.candidate, xpath, create=True)
+    merge_into(target, element)
+    return True, []
+
+
+def handle_multi_config(state, element):
+    """type=config&action=multi-config: a <multi-configure-request> batch of
+    set/edit/delete ops, each with an xpath (the panos provider uses this for
+    policy-rule resources). Applied in order; the aggregated per-op response
+    mirrors the real device."""
+    try:
+        req = ET.fromstring(element) if element.strip() else None
+    except ET.ParseError as e:
+        return resp_error([f"multi-config parse error: {e}"], code="400")
+
+    parts, ok_all = [], True
+    for i, op in enumerate(list(req) if req is not None else [], start=1):
+        opid = op.get("id", str(i))
+        xp = op.get("xpath", "")
+        if not xp:
+            parts.append(f'<response status="error" code="12" id="{opid}"><msg><line>xpath is required</line></msg></response>')
+            ok_all = False
+            continue
+        body = "".join(ET.tostring(c, encoding="unicode") for c in list(op))
+        ok, errs = apply_change(state, op.tag, xp, body)
+        if ok:
+            parts.append(f'<response status="success" code="20" id="{opid}"/>')
+        else:
+            inner = "".join(f"<line>{e}</line>" for e in errs)
+            parts.append(f'<response status="error" code="12" id="{opid}"><msg>{inner}</msg></response>')
+            ok_all = False
+
+    status, code = ("success", "20") if ok_all else ("error", "12")
+    return _xml(f'<response status="{status}" code="{code}">{"".join(parts)}</response>')
+
+
 def handle_config(state, params):
     action = (params.get("action") or [""])[0]
     xpath = (params.get("xpath") or [""])[0]
     element = (params.get("element") or [""])[0]
+
+    if action == "multi-config":
+        return handle_multi_config(state, element)
+
     if not xpath:
         return resp_error(["xpath is required"], code="400")
 
     if action in ("set", "edit"):
-        # Build the resulting entry to validate at set time.
-        target_preview = navigate(state.candidate, xpath, create=False)
-        if target_preview is not None:
-            preview = ET.fromstring(ET.tostring(target_preview, encoding="unicode"))
-        else:
-            tag, attr, val = parse_seg(split_xpath(xpath)[-1])
-            preview = ET.Element(tag)
-            if attr:
-                preview.set(attr, val)
-        if action == "edit":
-            for ch in list(preview):
-                preview.remove(ch)
-        merge_into(preview, element)
-
-        if preview.tag == "entry":
-            errs = state.validate_set(xpath, preview)
-            if errs:
-                lines = [f"{m['path']} -> {m['message']}" for m in errs]
-                return resp_error(lines, code="12")
-
-        target = navigate(state.candidate, xpath, create=True)
-        if action == "edit":
-            for ch in list(target):
-                target.remove(ch)
-        merge_into(target, element)
+        ok, errs = apply_change(state, action, xpath, element)
+        if not ok:
+            return resp_error(errs, code="12")
         return resp_success(code="20", msg="command succeeded")
 
     if action in ("get", "show"):
         root = state.candidate if action == "get" else state.running
         node = navigate(root, xpath, create=False)
-        inner = ET.tostring(node, encoding="unicode") if node is not None else ""
-        return resp_success(result_inner=inner)
+        # Real Panorama ALWAYS returns a <result> element: code 19 with count
+        # attributes when the node exists, code 7 with an empty <result/> when it
+        # does not. The panos SDK relies on <result> being present (an empty
+        # <response/> trips its XML decoder), so mirror the device exactly.
+        if node is None:
+            return _xml('<response status="success" code="7"><result/></response>')
+        inner = ET.tostring(node, encoding="unicode")
+        entries = node.findall("entry")
+        n = len(entries) if entries else 1
+        return _xml(f'<response status="success" code="19">'
+                    f'<result total-count="{n}" count="{n}">{inner}</result></response>')
 
     if action == "delete":
-        segs = split_xpath(xpath)
-        parent = navigate(state.candidate, "/".join([""] + segs[:-1]) or "/config", create=False)
-        node = navigate(state.candidate, xpath, create=False)
-        if parent is None or node is None:
-            return resp_error(["No such node"], code="7")
-        parent.remove(node)
+        ok, errs = apply_change(state, "delete", xpath, "")
+        if not ok:
+            return resp_error(errs, code="7")
         return resp_success(code="20", msg="command succeeded")
 
     return resp_error([f"unsupported action '{action}'"], code="400")
@@ -294,6 +393,12 @@ def make_handler(state):
                 body = self.rfile.read(length).decode("utf-8") if length else ""
                 for k, v in parse_qs(body, keep_blank_values=True).items():
                     params.setdefault(k, v)
+            # Real Panorama also accepts the API key via the X-PAN-KEY header; the
+            # panos Terraform provider sends it there by default.
+            if "key" not in params:
+                hdr = self.headers.get("X-PAN-KEY")
+                if hdr:
+                    params["key"] = [hdr]
             return params
 
         def _serve(self):

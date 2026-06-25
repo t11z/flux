@@ -1,0 +1,116 @@
+# flux - GitOps delivery pipeline (skeleton) for a self-hosted GitLab runner.
+#
+# Drives Terraform (the official panos v2 provider, XML-API) against Panorama:
+#   validate -> plan -> apply -> commit
+#
+# This template is intentionally inert (it lives under examples/ - see
+# docs/decisions/0003-github-dev-gitlab-runtime.md). Copy it to your delivery repo's
+# root as .gitlab-ci.yml and wire the runner + secrets described in README.md.
+#
+# By DEFAULT it targets the in-repo mock Panorama (mock/panorama_mock.py) so the whole
+# pipeline runs end-to-end with no real device. To target a real Panorama, set
+# PANOS_PROTOCOL=https + PANOS_HOSTNAME and provide credentials (see the secrets block).
+
+stages: [validate, plan, apply, commit]
+
+variables:
+  TF_ROOT: terraform
+  TF_IN_AUTOMATION: "true"
+  # --- target: the mock by default; override for a real Panorama ---
+  PANOS_HOSTNAME: "127.0.0.1"
+  PANOS_PROTOCOL: "http"
+  PANOS_PORT: "8080"
+  TF_VAR_panos_hostname: "$PANOS_HOSTNAME"
+  TF_VAR_panos_protocol: "$PANOS_PROTOCOL"
+  TF_VAR_panos_port: "$PANOS_PORT"
+  TF_VAR_panos_skip_verify_certificate: "true"
+
+# A runner image that has BOTH terraform and python3 (stdlib is enough for the mock/gate).
+# Replace with your self-hosted runner's image or a tools image you control.
+default:
+  image: registry.example.com/flux/ci-terraform-python:latest
+
+# ---------------------------------------------------------------------------
+# Credentials. Pick ONE:
+#  A) GitLab CI/CD variables: define masked TF_VAR_panos_api_key (or
+#     TF_VAR_panos_username + TF_VAR_panos_password) in project settings.
+#  B) Bitwarden Secrets Manager (free tier): uncomment .bws and the before_script
+#     reference in the jobs that talk to Panorama. Needs BWS_ACCESS_TOKEN (masked)
+#     and BWS_PANOS_KEY_ID (the secret's UUID) as CI/CD variables.
+# ---------------------------------------------------------------------------
+.bws: &bws
+  - export TF_VAR_panos_api_key="$(bws secret get "$BWS_PANOS_KEY_ID" | jq -r '.value')"
+
+# Start the mock in the background when targeting it (no-op for a real Panorama).
+.start_mock: &start_mock
+  - |
+    if [ "$PANOS_PROTOCOL" = "http" ] && [ "$PANOS_HOSTNAME" = "127.0.0.1" ]; then
+      python3 mock/panorama_mock.py --port "$PANOS_PORT" --log-file mock-audit.log &
+      for i in $(seq 1 20); do curl -sf "http://127.0.0.1:$PANOS_PORT/api/?type=keygen&user=a&password=b" >/dev/null && break; sleep 0.5; done
+      export TF_VAR_panos_api_key="flux-mock-key-0000000000000000000000000000"
+    fi
+
+# ---- validate: schema gate + terraform static checks (no device needed) ----
+validate:
+  stage: validate
+  script:
+    - python3 tools/test_validator.py          # the validate-before-apply schema gate
+    - python3 mock/test_mock.py                 # mock <-> gate parity
+    - cd "$TF_ROOT"
+    - terraform init -backend=false
+    - terraform fmt -check -recursive
+    - terraform validate
+
+# ---- plan: what would change on Panorama ----
+plan:
+  stage: plan
+  script:
+    - *start_mock
+    # - *bws            # uncomment for Bitwarden-sourced credentials
+    - cd "$TF_ROOT"
+    - terraform init
+    - terraform plan -input=false -out=tfplan
+  artifacts:
+    paths: ["$TF_ROOT/tfplan"]
+    expire_in: 1 day
+
+# ---- apply: push the candidate config via the XML-API ----
+apply:
+  stage: apply
+  when: manual                      # gate production applies behind a click
+  script:
+    - *start_mock
+    # - *bws
+    - cd "$TF_ROOT"
+    - terraform init
+    - terraform apply -input=false -auto-approve tfplan
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# ---- commit: promote candidate -> running, then notify ITSM ----
+commit:
+  stage: commit
+  when: manual
+  script:
+    - *start_mock
+    # - *bws
+    - |
+      KEY="${TF_VAR_panos_api_key:?api key required}"
+      BASE="$PANOS_PROTOCOL://$PANOS_HOSTNAME:$PANOS_PORT/api/"
+      JOB=$(curl -sk -H "X-PAN-KEY: $KEY" --data-urlencode "type=op" \
+            --data-urlencode "cmd=<commit></commit>" "$BASE" | sed -n 's:.*<job>\([0-9]*\)</job>.*:\1:p')
+      echo "commit job $JOB"
+      RESULT=$(curl -sk -H "X-PAN-KEY: $KEY" --data-urlencode "type=op" \
+            --data-urlencode "cmd=<show><jobs><id>$JOB</id></jobs></show>" "$BASE" | grep -o '<result>[A-Z]*</result>')
+      echo "commit result: $RESULT"
+      echo "$RESULT" | grep -q OK
+    # --- ITSM webhook stub: record the change on success ---
+    - |
+      if [ -n "$ITSM_WEBHOOK_URL" ]; then
+        curl -sf -X POST "$ITSM_WEBHOOK_URL" -H 'Content-Type: application/json' \
+          -d "{\"pipeline\":\"$CI_PIPELINE_URL\",\"commit\":\"$CI_COMMIT_SHA\",\"status\":\"committed\"}"
+      else
+        echo "ITSM_WEBHOOK_URL not set - skipping change notification"
+      fi
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'

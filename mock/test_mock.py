@@ -117,6 +117,62 @@ def main():
         sysm = ET.fromstring(r).find(".//system")
         check("system info reports Panorama",
               sysm.findtext("model") == "Panorama" and sysm.findtext("sw-version") == state.version)
+
+        # 11. API key via the X-PAN-KEY header (the panos provider's default)
+        body = urllib.parse.urlencode(
+            {"type": "op", "cmd": "<show><system><info></info></system></show>"}).encode()
+        hreq = urllib.request.Request(f"http://127.0.0.1:{port}/api/", data=body,
+                                      headers={"X-PAN-KEY": key})
+        with urllib.request.urlopen(hreq) as rr:
+            rh = rr.read().decode()
+        check("X-PAN-KEY header authenticates", status(rh) == "success" and "Panorama" in rh, rh)
+
+        # 12. get of a missing node -> code 7 with an (empty) <result/> present
+        # (the panos SDK trips on a <response/> that lacks <result>).
+        r = call(port, type="config", action="get", key=key,
+                 xpath=SH + "/address/entry[@name='nope']")
+        root = ET.fromstring(r)
+        check("missing get returns empty <result/>",
+              root.get("code") == "7" and root.find("result") is not None
+              and len(root.find("result")) == 0, r)
+
+        # 13. an entry name containing '/' (an interface) survives xpath parsing
+        ti = ("/config/devices/entry[@name='localhost.localdomain']/template/entry[@name='t']"
+              "/config/devices/entry[@name='localhost.localdomain']"
+              "/network/interface/ethernet/entry[@name='ethernet1/1']")
+        r = call(port, type="config", action="set", key=key, xpath=ti,
+                 element="<layer3><ip><entry name='10.0.0.1/24'/></ip></layer3>")
+        check("slash in interface name accepted", status(r) == "success", r)
+        r = call(port, type="config", action="get", key=key, xpath=ti)
+        check("slash-named entry reads back",
+              ET.fromstring(r).find(".//entry").get("name") == "ethernet1/1", r)
+
+        # 14. multi-config batch (what the panos provider uses for policy rules)
+        rule_xp = ("/config/devices/entry[@name='localhost.localdomain']/device-group/"
+                   "entry[@name='dg']/pre-rulebase/security/rules/entry[@name='r1']")
+        batch = ("<multi-configure-request>"
+                 f"<edit xpath=\"{rule_xp}\"><entry name='r1'>"
+                 "<from><member>any</member></from><to><member>any</member></to>"
+                 "<source><member>any</member></source><destination><member>any</member></destination>"
+                 "<application><member>any</member></application><service><member>any</member></service>"
+                 "<action>allow</action></entry></edit></multi-configure-request>")
+        r = call(port, type="config", action="multi-config", key=key, element=batch)
+        check("multi-config batch applies", status(r) == "success" and 'code="20"' in r, r)
+        r = call(port, type="config", action="get", key=key, xpath=rule_xp)
+        check("multi-config edit is stored",
+              ET.fromstring(r).find(".//entry").findtext("action") == "allow", r)
+
+        # 15. empty multi-config -> success (the provider sends one)
+        r = call(port, type="config", action="multi-config", key=key,
+                 element="<multi-configure-request></multi-configure-request>")
+        check("empty multi-config succeeds", status(r) == "success", r)
+
+        # 16. multi-config carrying a set-time violation -> rejected, not applied
+        bad = ("<multi-configure-request>"
+               f"<edit xpath=\"{rule_xp}\"><entry name='r1'><action>permit</action></entry></edit>"
+               "</multi-configure-request>")
+        r = call(port, type="config", action="multi-config", key=key, element=bad)
+        check("multi-config rejects bad enum", status(r) == "error", r)
     finally:
         server.shutdown()
 

@@ -1,0 +1,7 @@
+# Target the flux mock Panorama (mock/panorama_mock.py) over http.
+# Start it with:  python mock/panorama_mock.py --port 8080
+panos_hostname                = "127.0.0.1"
+panos_protocol                = "http"
+panos_port                    = 8080
+panos_api_key                 = "flux-mock-key-0000000000000000000000000000"
+panos_skip_verify_certificate = true

@@ -106,3 +106,35 @@ compare), rather than hand-curating from docs.
 **Open / next.** Phase 3b: the panos v2 Terraform modules + examples for the three use cases, the
 mock's `action=multi-config` handler (the provider batches writes), and the full GitLab pipeline
 skeleton (`examples/gitlab/`).
+
+## 2026-06-25 - Phase 3b: Terraform modules (panos v2) + GitLab pipeline
+
+**Goal.** Drive the three use cases through the official `PaloAltoNetworks/panos` **v2** provider
+end to end - `terraform apply` against the mock, then commit - and ship the GitLab delivery skeleton.
+
+**Done.**
+- **Terraform** (`terraform/`): root composition + three reusable modules — `dg_app_publish`
+  (UC1: addresses + service + security rule), `template_network` (UC2: ethernet interface + zone +
+  virtual router + template/stack), `dg_nat_interplay` (UC3: NAT rule referencing the template
+  zone/interface). The device group binds the template stack, so the device-group NAT rule resolves
+  the template's zone — the cross-layer interplay. Provider pinned `~> 2.0`; resources use the v2
+  `location { … }` model; rule resources use the `*_rules` (location + position + rules) form.
+- **Provider protocol, reverse-engineered against the mock** and confirmed on the live box: auth via
+  the **`X-PAN-KEY` header**; version detect via `show system info`; reads via `action=get`; writes
+  via `action=set`, and policy-rule resources via **`action=multi-config`** (`<multi-configure-request>`
+  batches). `terraform plan` resolves against the live Panorama (12.1.2).
+- **Mock upgraded** (`mock/panorama_mock.py`) to be a faithful stand-in for the v2 provider:
+  accept the `X-PAN-KEY` header; always return a `<result>` element (code 19 with counts when found,
+  code 7 `<result/>` when not — the SDK trips on a bare `<response/>`); a bracket-aware `split_xpath`
+  so slash-bearing names (`ethernet1/1`) parse; PAN-OS-correct `edit` (replace-the-node); and an
+  `action=multi-config` handler. Set-time validation still runs per op via the shared gate.
+  `mock/test_mock.py` extended to **21/21** (header auth, empty-result get, slash names, multi-config).
+- **End-to-end against the mock:** `terraform apply` creates all **12** resources, re-`plan` shows
+  **no drift**, `validate full` + `commit` succeed, and the running config carries the rules.
+  Needed `default_vsys` on the template stack so the provider emits the `<settings>` PAN-OS requires.
+- **GitLab pipeline** (`examples/gitlab/.gitlab-ci.yml` + README): validate → plan → apply → commit,
+  runnable against the mock by default, with Bitwarden-secret and ITSM-webhook stubs (ADR-0003).
+- **ADR-0005** records the panos v2 / XML-API apply-path decision.
+
+**Open / next.** Optional: TLS on the mock; a CI job that runs the Terraform e2e (needs terraform +
+the provider in the runner); more use cases via the documented module pattern.
