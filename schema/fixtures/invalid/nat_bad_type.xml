@@ -1,0 +1,7 @@
+<entry name="bad-nat">
+  <from><member>any</member></from>
+  <to><member>any</member></to>
+  <source><member>any</member></source>
+  <destination><member>any</member></destination>
+  <nat-type>bogus</nat-type>
+</entry>

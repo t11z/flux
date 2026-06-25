@@ -1,0 +1,8 @@
+# Target a real Panorama over https. Prefer environment variables or a secret
+# store for credentials (TF_VAR_panos_password / TF_VAR_panos_api_key) - do NOT
+# commit real secrets. See examples/gitlab/ for the Bitwarden-backed pipeline.
+panos_hostname                = "192.168.99.2"
+panos_protocol                = "https"
+panos_username                = "admin"
+# panos_password              = "set via TF_VAR_panos_password"
+panos_skip_verify_certificate = true

@@ -1,0 +1,5 @@
+﻿<entry name="flux-vr">
+  <interface>
+    <member>ethernet1/1</member>
+  </interface>
+</entry>

@@ -41,6 +41,8 @@ This project authenticates Claude tooling via `CLAUDE_CODE_OAUTH_TOKEN`, never `
 - `docs/IMPLEMENTATION-LOG.md` — dated working log; `docs/panorama-xpath-map.md` — supported XPaths.
 - `tools/` — XML-API wrapper, seeding, probing, schema compiler, validator (see `tools/CLAUDE.md`).
 - `mock/` — stdlib mock Panorama XML-API server for end-to-end pipeline runs (see `mock/CLAUDE.md`).
+- `terraform/` — panos v2 provider modules for the use cases (see `terraform/CLAUDE.md`).
+- `examples/gitlab/` — the GitLab delivery pipeline skeleton (validate → plan → apply → commit).
 - `schema/` — `panorama-schema.json` (source of truth), `fixtures/`, `constraints/`, `versions/`.
 - `.claude/commands/` — slash commands: `/adr-new`, `/security-review`.
 - `.claude/agents/` — subagents: `adr-author`, `security-reviewer`.

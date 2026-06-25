@@ -1,0 +1,4 @@
+<entry name="bad-zone">
+  <network><layer3><member>ethernet1/1</member></layer3></network>
+  <bogus>x</bogus>
+</entry>

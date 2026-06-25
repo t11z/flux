@@ -35,6 +35,7 @@ $val  = Join-Path $root 'tools\validate_config.py'
 $DEV  = "/config/devices/entry[@name='localhost.localdomain']"
 $DG   = "$DEV/device-group/entry[@name='flux-dg']"
 $SH   = "/config/shared"
+$TCFG = "$DEV/template/entry[@name='flux-tpl']/config/devices/entry[@name='localhost.localdomain']"
 
 function Invoke-ValidateFull {
     $v = Invoke-PanOp '<validate><full></full></validate>'
@@ -56,6 +57,10 @@ function Invoke-ValidateFull {
 $P_DG  = @{ xpath=$DG;                                       element='<description>flux demo dg</description>' }
 $P_WEB = @{ xpath="$SH/address/entry[@name='flux-web-srv']"; element='<ip-netmask>10.10.10.10/32</ip-netmask>' }
 $P_TPL = @{ xpath="$DEV/template/entry[@name='flux-tpl']";   element='<description>flux tpl</description>' }
+# Template-interior prereqs. A zone references an interface only once it is imported
+# into the vsys (set-time check), so the interface + import precede the zone.
+$P_IFACE  = @{ xpath="$TCFG/network/interface/ethernet/entry[@name='ethernet1/1']"; element='<layer3><ip><entry name="10.0.0.1/24"/></ip></layer3>' }
+$P_IMPORT = @{ xpath="$TCFG/vsys/entry[@name='vsys1']/import/network/interface";    element='<member>ethernet1/1</member>' }
 
 # fixture supplies the element (inner XML); token = object name to filter validation errors
 $cases = @(
@@ -68,7 +73,16 @@ $cases = @(
   @{ key='security-rule (valid)';  fixture='dg_security_rule.xml';     xpath="$DG/pre-rulebase/security/rules/entry[@name='flux-allow-web']"; token='flux-allow-web'; prereqs=@($P_DG,$P_WEB) }
   @{ key='template (valid)';       fixture='template.xml';             xpath="$DEV/template/entry[@name='flux-tpl']";         token='flux-tpl'; prereqs=@() }
   @{ key='template-stack (valid)'; fixture='template_stack.xml';       xpath="$DEV/template-stack/entry[@name='flux-stack']"; token='flux-stack'; prereqs=@($P_TPL) }
+  # --- template-interior + NAT valid ---
+  @{ key='interface (valid)';      fixture='template_interface.xml';      xpath="$TCFG/network/interface/ethernet/entry[@name='ethernet1/1']";    token='ethernet1/1';   prereqs=@($P_TPL) }
+  @{ key='virtual-router (valid)'; fixture='template_virtual_router.xml'; xpath="$TCFG/network/virtual-router/entry[@name='flux-vr']";          token='flux-vr';       prereqs=@($P_TPL,$P_IFACE) }
+  @{ key='zone (valid)';           fixture='template_zone.xml';           xpath="$TCFG/vsys/entry[@name='vsys1']/zone/entry[@name='flux-trust']"; token='flux-trust';    prereqs=@($P_TPL,$P_IFACE,$P_IMPORT) }
+  @{ key='nat-rule (valid)';       fixture='dg_nat_rule.xml';             xpath="$DG/pre-rulebase/nat/rules/entry[@name='flux-nat-hide']";        token='flux-nat-hide'; prereqs=@($P_DG,$P_TPL,$P_IFACE,$P_IMPORT) }
   # --- invalid ---
+  @{ key='nat bad nat-type';       fixture='invalid\nat_bad_type.xml';       xpath="$DG/pre-rulebase/nat/rules/entry[@name='bad-nat']";          token='bad-nat';        prereqs=@($P_DG) }
+  @{ key='nat missing fields';     fixture='invalid\nat_missing_fields.xml'; xpath="$DG/pre-rulebase/nat/rules/entry[@name='nat-incomplete']";    token='nat-incomplete'; prereqs=@($P_DG) }
+  @{ key='interface unknown child';fixture='invalid\interface_unknown_child.xml'; xpath="$TCFG/network/interface/ethernet/entry[@name='ethernet1/1']"; token='ethernet1/1'; prereqs=@($P_TPL) }
+  @{ key='zone unknown child';     fixture='invalid\zone_unknown_child.xml'; xpath="$TCFG/vsys/entry[@name='vsys1']/zone/entry[@name='bad-zone']"; token='bad-zone';      prereqs=@($P_TPL,$P_IFACE,$P_IMPORT) }
   @{ key='rule bad action/no to';  fixture='invalid\rule_bad_action_missing_to.xml'; xpath="$DG/pre-rulebase/security/rules/entry[@name='bad-rule']"; token='bad-rule'; prereqs=@($P_DG) }
   @{ key='address bad ip';         fixture='invalid\address_bad_ip.xml';       xpath="$SH/address/entry[@name='bad-ip']";    token='bad-ip'; prereqs=@() }
   @{ key='address unknown child';  fixture='invalid\address_unknown_child.xml';xpath="$SH/address/entry[@name='bad-child']"; token='bad-child'; prereqs=@() }

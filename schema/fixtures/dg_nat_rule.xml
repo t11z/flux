@@ -1,0 +1,23 @@
+﻿<entry name="flux-nat-hide">
+  <from>
+    <member>flux-trust</member>
+  </from>
+  <to>
+    <member>flux-trust</member>
+  </to>
+  <source>
+    <member>any</member>
+  </source>
+  <destination>
+    <member>any</member>
+  </destination>
+  <service>any</service>
+  <nat-type>ipv4</nat-type>
+  <source-translation>
+    <dynamic-ip-and-port>
+      <interface-address>
+        <interface>ethernet1/1</interface>
+      </interface-address>
+    </dynamic-ip-and-port>
+  </source-translation>
+</entry>

@@ -82,6 +82,30 @@ $seeds = @(
     @{ key='template-stack';        file='template_stack.xml';
        xpath="$DEV/template-stack/entry[@name='flux-stack']";
        element='<templates><member>flux-tpl</member></templates><settings></settings><description>flux demo stack</description>' }
+
+    # --- template-interior network config (inside flux-tpl's own config subtree) ---
+    @{ key='template-interface';    file='template_interface.xml';
+       xpath="$DEV/template/entry[@name='flux-tpl']/config/devices/entry[@name='localhost.localdomain']/network/interface/ethernet/entry[@name='ethernet1/1']";
+       element='<layer3><ip><entry name="10.0.0.1/24"/></ip></layer3><comment>flux seed interface</comment>' }
+
+    # A zone can only reference an interface that is imported into its vsys (set-time check).
+    @{ key='template-vsys-import';  file='template_vsys_import.xml';
+       xpath="$DEV/template/entry[@name='flux-tpl']/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='vsys1']/import/network/interface";
+       element='<member>ethernet1/1</member>' }
+
+    @{ key='template-zone';         file='template_zone.xml';
+       xpath="$DEV/template/entry[@name='flux-tpl']/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='vsys1']/zone/entry[@name='flux-trust']";
+       element='<network><layer3><member>ethernet1/1</member></layer3></network>' }
+
+    @{ key='template-virtual-router'; file='template_virtual_router.xml';
+       xpath="$DEV/template/entry[@name='flux-tpl']/config/devices/entry[@name='localhost.localdomain']/network/virtual-router/entry[@name='flux-vr']";
+       element='<interface><member>ethernet1/1</member></interface>' }
+
+    # --- NAT rule in the device-group: source NAT hiding behind the template interface,
+    #     to/from the template zone (the DG <-> template interplay) ---
+    @{ key='dg-nat-rule';           file='dg_nat_rule.xml';
+       xpath="$DEV/device-group/entry[@name='flux-dg']/pre-rulebase/nat/rules/entry[@name='flux-nat-hide']";
+       element='<from><member>flux-trust</member></from><to><member>flux-trust</member></to><source><member>any</member></source><destination><member>any</member></destination><service>any</service><nat-type>ipv4</nat-type><source-translation><dynamic-ip-and-port><interface-address><interface>ethernet1/1</interface></interface-address></dynamic-ip-and-port></source-translation>' }
 )
 
 # PAN-OS adds bookkeeping attributes to candidate-config nodes that are NOT part of

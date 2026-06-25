@@ -19,6 +19,7 @@ VAL = ROOT / "tools" / "validate_config.py"
 DEV = "/config/devices/entry[@name='localhost.localdomain']"
 DG = f"{DEV}/device-group/entry[@name='flux-dg']"
 SH = "/config/shared"
+TCFG = f"{DEV}/template/entry[@name='flux-tpl']/config/devices/entry[@name='localhost.localdomain']"
 
 # (fixture relative to schema/fixtures, target xpath, expectation)
 CASES = [
@@ -31,6 +32,11 @@ CASES = [
     ("device_group.xml",         f"{DEV}/device-group/entry[@name='flux-dg']",                      "PASS"),
     ("template.xml",             f"{DEV}/template/entry[@name='flux-tpl']",                         "PASS"),
     ("template_stack.xml",       f"{DEV}/template-stack/entry[@name='flux-stack']",                 "PASS"),
+    # --- template-interior + NAT valid -> PASS ---
+    ("template_interface.xml",      f"{TCFG}/network/interface/ethernet/entry[@name='ethernet1/1']", "PASS"),
+    ("template_zone.xml",           f"{TCFG}/vsys/entry[@name='vsys1']/zone/entry[@name='flux-trust']", "PASS"),
+    ("template_virtual_router.xml", f"{TCFG}/network/virtual-router/entry[@name='flux-vr']",          "PASS"),
+    ("dg_nat_rule.xml",             f"{DG}/pre-rulebase/nat/rules/entry[@name='flux-nat-hide']",      "PASS"),
     # --- warning -> PASS (PAN-OS accepts, keeps one type) ---
     ("invalid/address_two_types.xml", f"{SH}/address/entry[@name='bad-addr']", "PASS"),
     # --- invalid -> FAIL ---
@@ -39,6 +45,10 @@ CASES = [
     ("invalid/address_unknown_child.xml", f"{SH}/address/entry[@name='bad-child']", "FAIL"),
     ("invalid/address_no_type.xml",       f"{SH}/address/entry[@name='no-type']",   "FAIL"),
     ("invalid/service_no_port.xml",       f"{SH}/service/entry[@name='bad-svc']",   "FAIL"),
+    ("invalid/nat_bad_type.xml",          f"{DG}/pre-rulebase/nat/rules/entry[@name='bad-nat']",        "FAIL"),
+    ("invalid/nat_missing_fields.xml",    f"{DG}/pre-rulebase/nat/rules/entry[@name='nat-incomplete']", "FAIL"),
+    ("invalid/interface_unknown_child.xml", f"{TCFG}/network/interface/ethernet/entry[@name='ethernet1/1']", "FAIL"),
+    ("invalid/zone_unknown_child.xml",      f"{TCFG}/vsys/entry[@name='vsys1']/zone/entry[@name='bad-zone']", "FAIL"),
 ]
 
 

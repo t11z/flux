@@ -45,6 +45,9 @@ if (-not $PanosVersion) { $PanosVersion = '0.0.0'; Write-Warning "No source-info
 # Container XPaths are predicate-stripped (no [@name='...']); the validator
 # normalizes input XPaths the same way before matching.
 $DEV = "/config/devices/entry/device-group/entry"
+# A template carries a full firewall config subtree; its interior network config
+# (interfaces, zones, virtual routers) lives under the template's own config root.
+$TPLCFG = "/config/devices/entry/template/entry/config/devices/entry"
 
 $resources = [ordered]@{
 
@@ -120,6 +123,56 @@ $resources = [ordered]@{
         required        = @('templates','settings')   # 'settings' is commit-required (validate-full)
         memberlists     = @('templates','devices')
     }
+
+    # ---- template-interior network config (PAN-OS layer pushed to firewalls) ----
+    'ethernet-interface' = [ordered]@{
+        containers      = @("$TPLCFG/network/interface/ethernet")
+        allowedChildren = @('layer3','layer2','tap','virtual-wire','ha','decrypt-mirror','aggregate-group',
+                            'comment','link-state','link-speed','link-duplex','mtu','netflow-profile','poe')
+        required        = @()
+        # NOTE: PAN-OS does NOT format-check the interface IP at set time (the <ip> entry
+        # name may be a named address object), so there is deliberately no 'formats' here.
+        nested          = [ordered]@{
+            'layer3' = [ordered]@{ allowedChildren=@('ip','interface-management-profile','mtu','adjust-tcp-mss',
+                                                     'units','ipv6','dhcp-client','arp','ndp-proxy','lldp','netflow-profile') }
+        }
+    }
+
+    'zone' = [ordered]@{
+        containers      = @("$TPLCFG/vsys/entry/zone")
+        allowedChildren = @('network','enable-user-identification','user-acl','log-setting','enable-device-identification')
+        required        = @()
+        nested          = [ordered]@{
+            'network' = [ordered]@{
+                allowedChildren = @('layer3','layer2','virtual-wire','tap','external','tunnel',
+                                    'zone-protection-profile','enable-packet-buffer-protection','log-setting')
+                memberlists     = @('layer3','layer2','virtual-wire','tap','external')
+            }
+        }
+    }
+
+    'virtual-router' = [ordered]@{
+        containers      = @("$TPLCFG/network/virtual-router")
+        allowedChildren = @('interface','routing-table','protocol','ecmp','admin-dists','multicast')
+        memberlists     = @('interface')
+        required        = @()
+    }
+
+    # ---- NAT rules in the device-group rulebase (references zones/interfaces from a
+    #      template-stack -> the device-group <-> template interplay) ----
+    'nat-rule' = [ordered]@{
+        containers      = @("$DEV/pre-rulebase/nat/rules", "$DEV/post-rulebase/nat/rules")
+        allowedChildren = @('from','to','source','destination','service','nat-type',
+                            'source-translation','destination-translation','to-interface',
+                            'active-active-device-binding','disabled','description','tag','group-tag',
+                            'uuid','target','negate-target')
+        required        = @('from','to','source','destination','service')   # commit-time (validate-full)
+        memberlists     = @('from','to','source','destination','tag')   # 'service'/'to-interface' are single values
+        enums           = [ordered]@{
+            'nat-type' = @('ipv4','nat64','nptv6')
+            'disabled' = @('yes','no')
+        }
+    }
 }
 
 # Format definitions (documentation; the regexes live in the validator).
@@ -140,6 +193,10 @@ $fixtureMap = @{
     'device_group.xml'         = 'device-group'
     'template.xml'             = 'template'
     'template_stack.xml'       = 'template-stack'
+    'template_interface.xml'      = 'ethernet-interface'
+    'template_zone.xml'           = 'zone'
+    'template_virtual_router.xml' = 'virtual-router'
+    'dg_nat_rule.xml'             = 'nat-rule'
 }
 
 $warnings = @()
@@ -167,14 +224,32 @@ $schema = [ordered]@{
     resources       = $resources
 }
 
+# PowerShell's ConvertTo-Json indents inconsistently (and differs between Windows
+# PowerShell 5.1 and pwsh 7). Re-emit as deterministic 2-space JSON via Python
+# (already a project dependency). Best-effort: fall back to the raw string if Python
+# is unavailable - CI compares the schema SEMANTICALLY, so formatting never breaks it.
+function Write-PrettyJson {
+    param([string]$Json, [string]$Path)
+    $pretty = $null
+    try {
+        $tmp = [System.IO.Path]::GetTempFileName()
+        [System.IO.File]::WriteAllText($tmp, $Json, (New-Object System.Text.UTF8Encoding($false)))
+        $out = & python -c "import sys,json,io; print(json.dumps(json.load(io.open(sys.argv[1],encoding='utf-8-sig')), indent=2, ensure_ascii=False))" $tmp
+        if ($LASTEXITCODE -eq 0) { $pretty = ($out -join "`n") }
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    } catch { $pretty = $null }
+    if (-not $pretty) { $pretty = $Json }
+    Set-Content -LiteralPath $Path -Value $pretty -Encoding UTF8
+}
+
 $json = $schema | ConvertTo-Json -Depth 12
-Set-Content -LiteralPath $OutFile -Value $json -Encoding UTF8
+Write-PrettyJson -Json $json -Path $OutFile
 
 # versioned archive copy
 $verDir = Join-Path (Split-Path $OutFile -Parent) 'versions'
 $null = New-Item -ItemType Directory -Force -Path $verDir
 $verFile = Join-Path $verDir "panorama-$PanosVersion.json"
-Set-Content -LiteralPath $verFile -Value $json -Encoding UTF8
+Write-PrettyJson -Json $json -Path $verFile
 
 Write-Host "Schema written: $((Resolve-Path $OutFile).Path)  (PAN-OS $PanosVersion)"
 Write-Host "Archived:       $((Resolve-Path $verFile).Path)"
