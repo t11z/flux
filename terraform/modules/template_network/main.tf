@@ -40,4 +40,8 @@ resource "panos_template_stack" "stack" {
   # for a stack at commit time (validate-full rejects a stack without it).
   default_vsys = var.vsys
   templates    = [panos_template.tpl.name]
+  # The stack's default-vsys references vsys1, which only exists once the zone (in
+  # vsys1) is created. Without this dependency Terraform may create the stack first
+  # and PAN-OS rejects "default-vsys 'vsys1' is not a valid reference".
+  depends_on = [panos_zone.zone]
 }

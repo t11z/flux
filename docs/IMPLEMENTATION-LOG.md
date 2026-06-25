@@ -129,9 +129,16 @@ end to end - `terraform apply` against the mock, then commit - and ship the GitL
   so slash-bearing names (`ethernet1/1`) parse; PAN-OS-correct `edit` (replace-the-node); and an
   `action=multi-config` handler. Set-time validation still runs per op via the shared gate.
   `mock/test_mock.py` extended to **21/21** (header auth, empty-result get, slash names, multi-config).
-- **End-to-end against the mock:** `terraform apply` creates all **12** resources, re-`plan` shows
-  **no drift**, `validate full` + `commit` succeed, and the running config carries the rules.
-  Needed `default_vsys` on the template stack so the provider emits the `<settings>` PAN-OS requires.
+- **End-to-end against the mock AND the live Panorama (12.1.2):** `terraform apply` creates all
+  **12** resources, re-`plan` shows **no drift**, `validate full` is OK (mock also `commit`s). On the
+  live box the provider **auto-imports** the interface into the vsys when creating the zone, so
+  UC2/UC3 apply on real hardware.
+- Two fixes surfaced by the live-box run: (1) the template stack needs `default_vsys` so the
+  provider emits the `<settings>` PAN-OS requires at commit, and its `default-vsys` references
+  `vsys1` — which only exists once the zone is created — so the stack `depends_on` the zone (else
+  Terraform parallelism trips `default-vsys 'vsys1' is not a valid reference`). (2) The GitLab
+  pipeline now **verifies TLS by default**; `skip_verify`/`-k` are opt-in via `PANOS_CURL_INSECURE`
+  for a self-signed lab only (the API key rides the `X-PAN-KEY` header).
 - **GitLab pipeline** (`examples/gitlab/.gitlab-ci.yml` + README): validate → plan → apply → commit,
   runnable against the mock by default, with Bitwarden-secret and ITSM-webhook stubs (ADR-0003).
 - **ADR-0005** records the panos v2 / XML-API apply-path decision.

@@ -23,7 +23,12 @@ variables:
   TF_VAR_panos_hostname: "$PANOS_HOSTNAME"
   TF_VAR_panos_protocol: "$PANOS_PROTOCOL"
   TF_VAR_panos_port: "$PANOS_PORT"
-  TF_VAR_panos_skip_verify_certificate: "true"
+  # TLS is VERIFIED by default. Only a self-signed lab Panorama needs to relax it:
+  # set TF_VAR_panos_skip_verify_certificate=true AND PANOS_CURL_INSECURE=-k as
+  # CI/CD variables for that environment. The default (mock) target is http, so
+  # neither applies to it.
+  TF_VAR_panos_skip_verify_certificate: "false"
+  PANOS_CURL_INSECURE: ""
 
 # A runner image that has BOTH terraform and python3 (stdlib is enough for the mock/gate).
 # Replace with your self-hosted runner's image or a tools image you control.
@@ -97,10 +102,10 @@ commit:
     - |
       KEY="${TF_VAR_panos_api_key:?api key required}"
       BASE="$PANOS_PROTOCOL://$PANOS_HOSTNAME:$PANOS_PORT/api/"
-      JOB=$(curl -sk -H "X-PAN-KEY: $KEY" --data-urlencode "type=op" \
+      JOB=$(curl -s $PANOS_CURL_INSECURE -H "X-PAN-KEY: $KEY" --data-urlencode "type=op" \
             --data-urlencode "cmd=<commit></commit>" "$BASE" | sed -n 's:.*<job>\([0-9]*\)</job>.*:\1:p')
       echo "commit job $JOB"
-      RESULT=$(curl -sk -H "X-PAN-KEY: $KEY" --data-urlencode "type=op" \
+      RESULT=$(curl -s $PANOS_CURL_INSECURE -H "X-PAN-KEY: $KEY" --data-urlencode "type=op" \
             --data-urlencode "cmd=<show><jobs><id>$JOB</id></jobs></show>" "$BASE" | grep -o '<result>[A-Z]*</result>')
       echo "commit result: $RESULT"
       echo "$RESULT" | grep -q OK

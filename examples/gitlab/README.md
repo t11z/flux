@@ -55,6 +55,12 @@ Set these CI/CD variables (Settings ▸ CI/CD ▸ Variables), then re-run:
 When `PANOS_PROTOCOL=https`, the `.start_mock` helper is a no-op and the jobs talk to
 the real device.
 
+**TLS is verified by default.** The API key travels in the `X-PAN-KEY` header, so an
+unverified TLS connection would expose it to a man-in-the-middle. Only relax this for a
+**self-signed lab** Panorama, and only there: set `TF_VAR_panos_skip_verify_certificate=true`
+**and** `PANOS_CURL_INSECURE=-k` as CI/CD variables for that environment. A production
+Panorama should present a trusted certificate and keep both at their secure defaults.
+
 ## Secrets via Bitwarden (optional)
 
 Instead of a masked CI variable, the key can come from
