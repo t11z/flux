@@ -18,20 +18,27 @@ relative layout. The minimum runnable subset is:
 ```
 .gitlab-ci.yml            ← from examples/gitlab/.gitlab-ci.yml, at the ROOT
 README.md                 ← delivery-repo readme (see examples/gitlab/README.md)
-.gitignore                ← .terraform/, *.tfstate*, __pycache__/, tfplan, mock-audit.log
+RUNNER-SETUP.md           ← self-hosted runner guide (from examples/gitlab/)
+STATE-MANAGEMENT.md       ← backend / state / drift / import guide (from examples/gitlab/)
+.gitignore                ← .terraform/, *.tfstate*, __pycache__/, tfplan, mock-audit.log,
+                            mock-state/, *.backendrc, *_override.tf
 tools/
   validate_config.py      ← the validate-before-apply gate
   test_validator.py       ← its regression harness
 mock/
-  panorama_mock.py        ← stdlib mock Panorama XML-API
+  panorama_mock.py        ← stdlib mock Panorama XML-API (incl. --state-file durability)
   test_mock.py            ← mock <-> gate parity test
 schema/                   ← HARD dependency: the validator + mock load it at runtime
   panorama-schema.json
   source-info.json
   fixtures/               ← used by test_validator.py
-terraform/                ← all *.tf, modules/, *.tfvars.example, .terraform.lock.hcl
+terraform/                ← all *.tf, modules/, desired/, *.tfvars.example, .terraform.lock.hcl
                             (exclude the .terraform/ provider cache)
 ```
+
+The Terraform **state is persistent** (GitLab-managed Terraform state; auth via `CI_JOB_TOKEN`,
+nothing to set) and the **desired config lives in git** under `terraform/desired/`. A scheduled
+pipeline runs a drift check. See [STATE-MANAGEMENT.md](STATE-MANAGEMENT.md).
 
 The PowerShell discovery tools (`pan-api.ps1`, `seed-fixtures.ps1`, `probe-constraints.ps1`,
 `build-schema.ps1`, …) and `schema/constraints` + `schema/versions` are **dev-time** artifacts

@@ -25,6 +25,10 @@ validate ─▶ plan ─▶ apply ─▶ commit
 The Terraform lives in [`../../terraform/`](../../terraform) and ships three everyday
 use cases as modules (publish an app, template network config, NAT interplay).
 
+**State is persistent and authoritative.** The desired config lives in git
+(`terraform/desired/`) and is converged as a whole into one GitLab-managed Terraform state;
+a scheduled pipeline runs a drift check. See [STATE-MANAGEMENT.md](STATE-MANAGEMENT.md).
+
 ## Runnable by default (no real device)
 
 Out of the box the pipeline targets the in-repo **mock Panorama**

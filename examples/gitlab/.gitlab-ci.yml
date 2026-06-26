@@ -1,21 +1,29 @@
-# flux - GitOps delivery pipeline (skeleton) for a self-hosted GitLab runner.
+# flux - GitOps delivery pipeline (skeleton).
 #
 # Drives Terraform (the official panos v2 provider, XML-API) against Panorama:
-#   validate -> plan -> apply -> commit
+#   validate -> plan -> apply -> commit   (+ a scheduled drift watcher)
 #
 # This template is intentionally inert (it lives under examples/ - see
 # docs/decisions/0003-github-dev-gitlab-runtime.md). Copy it to your delivery repo's
 # root as .gitlab-ci.yml and wire the runner + secrets described in README.md.
 #
-# By DEFAULT it targets the in-repo mock Panorama (mock/panorama_mock.py) so the whole
-# pipeline runs end-to-end with no real device. To target a real Panorama, set
-# PANOS_PROTOCOL=https + PANOS_HOSTNAME and provide credentials (see the secrets block).
+# STATE: persistent, authoritative Terraform state in GitLab-managed Terraform state
+# (HTTP backend, auth via $CI_JOB_TOKEN). The full desired config lives in git under
+# terraform/desired/ and is converged as a whole. See STATE-MANAGEMENT.md and
+# docs/decisions/0006-authoritative-persistent-state.md.
+#
+# By DEFAULT it targets the in-repo mock Panorama (mock/panorama_mock.py); the mock is
+# made DURABLE via --state-file + cache so it mirrors a real device across runs. To
+# target a real Panorama set PANOS_PROTOCOL=https + PANOS_HOSTNAME and supply credentials.
 
-stages: [validate, plan, apply, commit]
+stages: [validate, plan, apply, commit, drift]
 
 variables:
   TF_ROOT: terraform
   TF_IN_AUTOMATION: "true"
+  TERRAFORM_VERSION: "1.9.8"
+  # Name of the GitLab-managed Terraform state (one authoritative config for flux).
+  STATE_NAME: "flux"
   # --- target: the mock by default; override for a real Panorama ---
   PANOS_HOSTNAME: "127.0.0.1"
   PANOS_PROTOCOL: "http"
@@ -25,77 +33,109 @@ variables:
   TF_VAR_panos_port: "$PANOS_PORT"
   # TLS is VERIFIED by default. Only a self-signed lab Panorama needs to relax it:
   # set TF_VAR_panos_skip_verify_certificate=true AND PANOS_CURL_INSECURE=-k as
-  # CI/CD variables for that environment. The default (mock) target is http, so
-  # neither applies to it.
+  # CI/CD variables for that environment. The default (mock) target is http.
   TF_VAR_panos_skip_verify_certificate: "false"
   PANOS_CURL_INSECURE: ""
 
-# A runner image that has BOTH terraform and python3 (stdlib is enough for the mock/gate).
-# Replace with your self-hosted runner's image or a tools image you control.
+# The jobs need terraform + python3 (stdlib) + curl. Runs on gitlab.com shared runners
+# out of the box: Debian python image (stdlib XML/expat works - Alpine's apk python3 has
+# an expat skew that breaks xml.etree) + a pinned terraform binary. A self-hosted runner
+# whose image bundles all three can drop before_script (see RUNNER-SETUP.md).
 default:
-  image: registry.example.com/flux/ci-terraform-python:latest
+  image: python:3.12-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends curl unzip ca-certificates >/dev/null
+    - curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -o /tmp/terraform.zip
+    - unzip -oq /tmp/terraform.zip -d /usr/local/bin && terraform version
+
+# The durable mock "device" travels with the pipeline so plan/apply/commit/drift see one
+# consistent device (mirrors a real Panorama's persistence). Keyed by the state identity.
+cache:
+  key: "mock-$STATE_NAME"
+  paths: [mock-state/]
 
 # ---------------------------------------------------------------------------
-# Credentials. Pick ONE:
-#  A) GitLab CI/CD variables: define masked TF_VAR_panos_api_key (or
-#     TF_VAR_panos_username + TF_VAR_panos_password) in project settings.
-#  B) Bitwarden Secrets Manager (free tier): uncomment .bws and the before_script
-#     reference in the jobs that talk to Panorama. Needs BWS_ACCESS_TOKEN (masked)
-#     and BWS_PANOS_KEY_ID (the secret's UUID) as CI/CD variables.
+# Credentials for Panorama. Pick ONE:
+#  A) GitLab CI/CD variables: masked TF_VAR_panos_api_key (or username+password).
+#  B) Bitwarden Secrets Manager: uncomment .bws in the jobs that talk to Panorama.
+# (The GitLab STATE backend authenticates separately via $CI_JOB_TOKEN - nothing to set.)
 # ---------------------------------------------------------------------------
 .bws: &bws
   - export TF_VAR_panos_api_key="$(bws secret get "$BWS_PANOS_KEY_ID" | jq -r '.value')"
 
-# Start the mock in the background when targeting it (no-op for a real Panorama).
+# terraform init against GitLab-managed Terraform state (HTTP backend). CI_JOB_TOKEN is
+# predefined and auto-scoped to this project's Terraform-state API. Local dev fills the
+# same -backend-config from a gitignored *.backendrc with a PAT (see STATE-MANAGEMENT.md).
+.tf_init: &tf_init
+  - |
+    terraform init -input=false \
+      -backend-config="address=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${STATE_NAME}" \
+      -backend-config="lock_address=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${STATE_NAME}/lock" \
+      -backend-config="unlock_address=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${STATE_NAME}/lock" \
+      -backend-config="username=gitlab-ci-token" \
+      -backend-config="password=${CI_JOB_TOKEN}" \
+      -backend-config="lock_method=POST" \
+      -backend-config="unlock_method=DELETE" \
+      -backend-config="retry_wait_min=5"
+
+# Start the durable mock in the background when targeting it (no-op for a real Panorama).
 .start_mock: &start_mock
   - |
     if [ "$PANOS_PROTOCOL" = "http" ] && [ "$PANOS_HOSTNAME" = "127.0.0.1" ]; then
-      python3 mock/panorama_mock.py --port "$PANOS_PORT" --log-file mock-audit.log &
+      mkdir -p mock-state
+      python3 mock/panorama_mock.py --port "$PANOS_PORT" \
+        --state-file "mock-state/${STATE_NAME}.json" --log-file mock-audit.log &
       for i in $(seq 1 20); do curl -sf "http://127.0.0.1:$PANOS_PORT/api/?type=keygen&user=a&password=b" >/dev/null && break; sleep 0.5; done
       export TF_VAR_panos_api_key="flux-mock-key-0000000000000000000000000000"
     fi
 
-# ---- validate: schema gate + terraform static checks (no device needed) ----
+# ---- validate: schema gate + terraform static checks (no device, no state) ----
 validate:
   stage: validate
   script:
     - python3 tools/test_validator.py          # the validate-before-apply schema gate
-    - python3 mock/test_mock.py                 # mock <-> gate parity
+    - python3 mock/test_mock.py                 # mock <-> gate parity (+ durability)
     - cd "$TF_ROOT"
     - terraform init -backend=false
     - terraform fmt -check -recursive
     - terraform validate
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
 
-# ---- plan: what would change on Panorama ----
+# ---- plan: converge the FULL desired config (terraform/desired/) against the device ----
 plan:
   stage: plan
   script:
     - *start_mock
     # - *bws            # uncomment for Bitwarden-sourced credentials
     - cd "$TF_ROOT"
-    - terraform init
+    - *tf_init
     - terraform plan -input=false -out=tfplan
   artifacts:
-    paths: ["$TF_ROOT/tfplan"]
+    paths: ["$TF_ROOT/tfplan", "mock-state/"]
     expire_in: 1 day
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
 
 # ---- apply: push the candidate config via the XML-API ----
 apply:
   stage: apply
-  when: manual                      # gate production applies behind a click
   script:
     - *start_mock
     # - *bws
     - cd "$TF_ROOT"
-    - terraform init
+    - *tf_init
     - terraform apply -input=false -auto-approve tfplan
+  artifacts:
+    paths: ["mock-state/"]
+    expire_in: 1 day
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE != "schedule"'
+      when: manual
 
-# ---- commit: promote candidate -> running, then notify ITSM ----
+# ---- commit: promote candidate -> running (out-of-band; Terraform can't commit), notify ITSM ----
 commit:
   stage: commit
-  when: manual
   script:
     - *start_mock
     # - *bws
@@ -117,5 +157,22 @@ commit:
       else
         echo "ITSM_WEBHOOK_URL not set - skipping change notification"
       fi
+  artifacts:
+    paths: ["mock-state/"]
+    expire_in: 1 day
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE != "schedule"'
+      when: manual
+
+# ---- drift: scheduled converge check. "No changes" = device matches git+state.
+# A non-empty plan (exit code 2) means someone changed the device out-of-band. Make
+# flux the sole writer (Panorama RBAC: read-only for humans) so this stays green.
+drift:
+  stage: drift
+  script:
+    - *start_mock
+    - cd "$TF_ROOT"
+    - *tf_init
+    - terraform plan -input=false -detailed-exitcode
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'

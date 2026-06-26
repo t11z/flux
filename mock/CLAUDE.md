@@ -17,7 +17,10 @@ A stdlib-only mock Panorama XML-API server:
   violation blocks a `set` or only a `commit`/`validate full`.
 - Keep responses shaped like the real device (`<response status="...">`, nested `<msg><line>`,
   job results under `response/result/job`) so the existing tooling can parse them.
-- State is in-memory by design; do not add a database. `--seed` loads a starting candidate.
+- State is in-memory by default; `--seed` loads a starting candidate. Optional file-based
+  durability via `--state-file` (stdlib JSON: loads running+candidate on start with precedence over
+  `--seed`, saves on every mutation/commit) so the mock can mirror a real device's persistence
+  across restarts. Still stdlib-only, still no database.
 
 ## Wayfinding
 

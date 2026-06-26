@@ -30,6 +30,7 @@ Supported requests (https://host/api/?...):
 Run:  python mock/panorama_mock.py --port 8080 [--seed candidate.xml] [--version 12.1.2]
 """
 import argparse
+import json
 import re
 import sys
 import time
@@ -141,7 +142,7 @@ def resp_error(lines, code="12"):
 
 # ---------------- mock state ----------------
 class MockState:
-    def __init__(self, schema, version, seed_path=None, log_file=None):
+    def __init__(self, schema, version, seed_path=None, log_file=None, state_file=None):
         self.schema = schema
         self.version = version
         self.candidate = ET.Element("config")
@@ -149,8 +150,30 @@ class MockState:
         self.jobs = {}
         self.next_job = 1
         self.log_file = log_file
-        if seed_path:
+        self.state_file = state_file
+        # Durability: a real Panorama persists its config across restarts. With
+        # --state-file the mock mirrors that - it loads running+candidate on start
+        # (taking precedence over --seed) and saves on every mutation/commit.
+        if state_file and Path(state_file).exists():
+            self._load_state(Path(state_file))
+        elif seed_path:
             self.candidate = ET.parse(seed_path).getroot()
+
+    def _load_state(self, path):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        self.running = ET.fromstring(data["running"]) if data.get("running") else ET.Element("config")
+        self.candidate = ET.fromstring(data["candidate"]) if data.get("candidate") else ET.Element("config")
+        self.next_job = data.get("next_job", 1)
+
+    def _save_state(self):
+        if not self.state_file:
+            return
+        payload = {
+            "running": ET.tostring(self.running, encoding="unicode"),
+            "candidate": ET.tostring(self.candidate, encoding="unicode"),
+            "next_job": self.next_job,
+        }
+        Path(self.state_file).write_text(json.dumps(payload), encoding="utf-8")
 
     def log(self, **fields):
         ts = time.strftime("%Y-%m-%dT%H:%M:%S")
@@ -294,6 +317,7 @@ def handle_multi_config(state, element):
             ok_all = False
 
     status, code = ("success", "20") if ok_all else ("error", "12")
+    state._save_state()
     return _xml(f'<response status="{status}" code="{code}">{"".join(parts)}</response>')
 
 
@@ -312,6 +336,7 @@ def handle_config(state, params):
         ok, errs = apply_change(state, action, xpath, element)
         if not ok:
             return resp_error(errs, code="12")
+        state._save_state()
         return resp_success(code="20", msg="command succeeded")
 
     if action in ("get", "show"):
@@ -333,6 +358,7 @@ def handle_config(state, params):
         ok, errs = apply_change(state, "delete", xpath, "")
         if not ok:
             return resp_error(errs, code="7")
+        state._save_state()
         return resp_success(code="20", msg="command succeeded")
 
     return resp_error([f"unsupported action '{action}'"], code="400")
@@ -377,6 +403,7 @@ def handle_op(state, params):
                                "lines": ["Commit failed - validation errors:"] + lines}
         else:
             state.running = ET.fromstring(ET.tostring(state.candidate, encoding="unicode"))
+            state._save_state()
             state.jobs[jid] = {"type": "Commit", "result": "OK", "lines": ["Configuration committed successfully"]}
         return resp_success(code="19",
                             result_inner=f"<msg><line>Commit job enqueued with jobid {jid}</line></msg><job>{jid}</job>")
@@ -431,9 +458,9 @@ def make_handler(state):
     return Handler
 
 
-def make_server(host, port, schema_path=None, version="12.1.2", seed=None, log_file=None):
+def make_server(host, port, schema_path=None, version="12.1.2", seed=None, log_file=None, state_file=None):
     schema = vc.load_schema(schema_path)
-    state = MockState(schema, version, seed_path=seed, log_file=log_file)
+    state = MockState(schema, version, seed_path=seed, log_file=log_file, state_file=state_file)
     server = ThreadingHTTPServer((host, port), make_handler(state))
     return server, state
 
@@ -446,10 +473,12 @@ def main():
     ap.add_argument("--version", default=None, help="reported PAN-OS sw-version (default: schema panosVersion)")
     ap.add_argument("--seed", help="XML file to preload as the candidate config")
     ap.add_argument("--log-file", dest="log_file", help="append the audit log to this file")
+    ap.add_argument("--state-file", dest="state_file",
+                    help="JSON file to persist running+candidate config across restarts (durability)")
     a = ap.parse_args()
     schema = vc.load_schema(a.schema)
     version = a.version or schema.get("panosVersion", "0.0.0")
-    state = MockState(schema, version, seed_path=a.seed, log_file=a.log_file)
+    state = MockState(schema, version, seed_path=a.seed, log_file=a.log_file, state_file=a.state_file)
     server = ThreadingHTTPServer((a.host, a.port), make_handler(state))
     print(f"flux mock Panorama (PAN-OS {version}) on http://{a.host}:{a.port}/api/  (Ctrl+C to stop)",
           file=sys.stderr)
