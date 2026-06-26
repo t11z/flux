@@ -33,6 +33,7 @@ import argparse
 import json
 import re
 import sys
+import threading
 import time
 import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -151,6 +152,7 @@ class MockState:
         self.next_job = 1
         self.log_file = log_file
         self.state_file = state_file
+        self._save_lock = threading.Lock()
         # Durability: a real Panorama persists its config across restarts. With
         # --state-file the mock mirrors that - it loads running+candidate on start
         # (taking precedence over --seed) and saves on every mutation/commit.
@@ -160,20 +162,33 @@ class MockState:
             self.candidate = ET.parse(seed_path).getroot()
 
     def _load_state(self, path):
-        data = json.loads(path.read_text(encoding="utf-8"))
-        self.running = ET.fromstring(data["running"]) if data.get("running") else ET.Element("config")
-        self.candidate = ET.fromstring(data["candidate"]) if data.get("candidate") else ET.Element("config")
-        self.next_job = data.get("next_job", 1)
+        # Defensive: a torn/corrupt state file must not stop the mock from booting
+        # (the CI cache carries this file across runs - a hard failure would wedge
+        # every subsequent pipeline). Fall back to an empty config instead.
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            self.running = ET.fromstring(data["running"]) if data.get("running") else ET.Element("config")
+            self.candidate = ET.fromstring(data["candidate"]) if data.get("candidate") else ET.Element("config")
+            self.next_job = data.get("next_job", 1)
+        except (OSError, ValueError, ET.ParseError):
+            self.running = ET.Element("config")
+            self.candidate = ET.Element("config")
 
     def _save_state(self):
         if not self.state_file:
             return
-        payload = {
-            "running": ET.tostring(self.running, encoding="unicode"),
-            "candidate": ET.tostring(self.candidate, encoding="unicode"),
-            "next_job": self.next_job,
-        }
-        Path(self.state_file).write_text(json.dumps(payload), encoding="utf-8")
+        # Atomic write (temp + replace) under a lock: ThreadingHTTPServer serves each
+        # request in its own thread, so a naive truncate-then-write could be torn.
+        with self._save_lock:
+            payload = {
+                "running": ET.tostring(self.running, encoding="unicode"),
+                "candidate": ET.tostring(self.candidate, encoding="unicode"),
+                "next_job": self.next_job,
+            }
+            target = Path(self.state_file)
+            tmp = target.with_suffix(target.suffix + ".tmp")
+            tmp.write_text(json.dumps(payload), encoding="utf-8")
+            tmp.replace(target)
 
     def log(self, **fields):
         ts = time.strftime("%Y-%m-%dT%H:%M:%S")

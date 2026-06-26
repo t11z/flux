@@ -20,6 +20,8 @@ validate ─▶ plan ─▶ apply ─▶ commit
    │          │        └─ terraform apply (candidate config) — manual gate
    │          └─ terraform plan (against Panorama or the mock)
    └─ schema gate (test_validator.py) + terraform fmt/validate
+
+drift (scheduled) ─▶ terraform plan -detailed-exitcode   (must report "No changes")
 ```
 
 The Terraform lives in [`../../terraform/`](../../terraform) and ships three everyday

@@ -69,6 +69,11 @@ terraform init && terraform plan -var-file=mock.tfvars.example
 
 `*_override.tf` and `*.backendrc` are gitignored — they never ship.
 
+> **Sensitive artifact (real device):** the saved `tfplan` passed between stages embeds resolved
+> sensitive provider attributes, including `TF_VAR_panos_api_key`. Against a real Panorama, restrict
+> it (`artifacts.access: developer`, short `expire_in`) or re-plan inside `apply` rather than
+> persisting `tfplan`. The `mock-state/` artifact is benign.
+
 ## Desired state (`terraform/desired/`)
 
 ```
@@ -86,6 +91,12 @@ stable names, a change to one record produces a plan that touches only that reco
 > manage an *ordered list* at a rulebase position. With a single owner this is fine; if you grow to
 > many app records each emitting their own rule group at the same position, give the rulebase a
 > single owner (one aggregating rules resource) rather than one per record.
+>
+> **Address-name uniqueness caveat.** Backend address objects are named from each app's
+> `server_ips` map keys, and object names are global within a device group. Each `apps/<name>.yaml`
+> is a separate module instance, so Terraform cannot see a cross-file name clash at plan time — keep
+> `server_ips` keys **globally unique across all app files** (the seed keys are already prefixed,
+> e.g. `flux-web-srv-1`).
 
 ## Commit is out-of-band
 
@@ -123,6 +134,11 @@ means the device no longer matches git+state — someone changed it out-of-band.
   `--state-file mock-state/$STATE_NAME.json`, and GitLab `cache` (key `mock-$STATE_NAME`) + a
   `mock-state/` artifact carry it across jobs and runs. So the mock "device" persists like a real
   one, and plan/apply/commit/drift see a consistent device.
+  > The cross-run carrier is the GitLab **cache**, which is **best-effort** — if it is evicted, the
+  > mock restarts empty while the durable Terraform state still records every object, so the next
+  > plan/drift reports a spurious full re-create. This is a mock-only artifact of the demo; for
+  > persistence-sensitive validation use the real lab path. (The intra-pipeline artifact handoff is
+  > reliable; only cross-pipeline durability depends on cache retention.)
 - **Real lab Panorama (gold standard).** A real device is durable by nature — no mock, no cache.
   Set `PANOS_PROTOCOL=https`, `PANOS_HOSTNAME=<lab>`, `PANOS_PORT=443`, masked
   `TF_VAR_panos_api_key` (self-signed lab also: `TF_VAR_panos_skip_verify_certificate=true` +

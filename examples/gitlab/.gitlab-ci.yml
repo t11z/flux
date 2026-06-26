@@ -145,10 +145,17 @@ commit:
       JOB=$(curl -s $PANOS_CURL_INSECURE -H "X-PAN-KEY: $KEY" --data-urlencode "type=op" \
             --data-urlencode "cmd=<commit></commit>" "$BASE" | sed -n 's:.*<job>\([0-9]*\)</job>.*:\1:p')
       echo "commit job $JOB"
-      RESULT=$(curl -s $PANOS_CURL_INSECURE -H "X-PAN-KEY: $KEY" --data-urlencode "type=op" \
-            --data-urlencode "cmd=<show><jobs><id>$JOB</id></jobs></show>" "$BASE" | grep -o '<result>[A-Z]*</result>')
-      echo "commit result: $RESULT"
-      echo "$RESULT" | grep -q OK
+      # Poll the job: the mock finishes synchronously; a real Panorama commit is async,
+      # so a single read would see ACT/PEND. Wait for <status>FIN</status>, then check result.
+      STATUS=""
+      for i in $(seq 1 60); do
+        STATUS=$(curl -s $PANOS_CURL_INSECURE -H "X-PAN-KEY: $KEY" --data-urlencode "type=op" \
+              --data-urlencode "cmd=<show><jobs><id>$JOB</id></jobs></show>" "$BASE")
+        echo "$STATUS" | grep -q "<status>FIN</status>" && break
+        sleep 5
+      done
+      echo "commit result: $(echo "$STATUS" | grep -o '<result>[A-Z]*</result>')"
+      echo "$STATUS" | grep -q "<result>OK</result>"
     # --- ITSM webhook stub: record the change on success ---
     - |
       if [ -n "$ITSM_WEBHOOK_URL" ]; then

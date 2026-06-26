@@ -4,7 +4,7 @@ description: "Hold the whole managed Panorama config as git desired-state, conve
 type: adr
 category: architecture
 tags: [terraform, state, gitops, panorama, drift, gitlab]
-status: proposed
+status: accepted
 created: 2026-06-26
 updated: 2026-06-26
 author: "Thomas Sprock"
@@ -16,7 +16,7 @@ related: [0003-github-dev-gitlab-runtime.md, 0004-mock-server-python-stdlib.md, 
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
