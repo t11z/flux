@@ -1,0 +1,11 @@
+# Coupled template + device-group scaffolding (singleton) - the two-dimensional
+# Template <-> Device-Group unit flux owns. The device-group binds the template stack;
+# device-group rules resolve this template's zone/interface (the UC3 interplay).
+device_group:   flux-dg
+template:       flux-tpl
+template_stack: flux-stack
+vsys:           vsys1
+interface_name: ethernet1/1
+interface_ip:   10.0.0.1/24
+zone_name:      flux-trust
+virtual_router: flux-vr

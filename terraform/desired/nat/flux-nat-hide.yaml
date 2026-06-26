@@ -1,0 +1,3 @@
+# A NAT rule (UC3) - references the template's zone + interface (template<->DG interplay).
+# One file per NAT rule under desired/nat/. Filename is the for_each key.
+nat_rule_name: flux-nat-hide

@@ -34,3 +34,10 @@ Thumbs.db
 # Claude Code (personal overrides)
 CLAUDE.local.md
 .claude/settings.local.json
+
+# Local backend override for dev (never ship)
+*_override.tf
+*.backendrc
+
+# Durable-mock state (CI artifact/cache, not source)
+mock-state/

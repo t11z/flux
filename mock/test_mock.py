@@ -7,6 +7,7 @@ realistic XML responses and the set-time vs commit-time behaviour. Stdlib only.
     python mock/test_mock.py
 """
 import sys
+import tempfile
 import threading
 import urllib.parse
 import urllib.request
@@ -173,6 +174,32 @@ def main():
                "</multi-configure-request>")
         r = call(port, type="config", action="multi-config", key=key, element=bad)
         check("multi-config rejects bad enum", status(r) == "error", r)
+
+        # 17. --state-file durability: config survives a process restart (mirrors a
+        # real Panorama, which persists its config; the default in-memory mock does not).
+        sf = Path(tempfile.gettempdir()) / "flux-mock-durability-test.json"
+        if sf.exists():
+            sf.unlink()
+        srv1, _ = mock.make_server("127.0.0.1", 0, state_file=str(sf))
+        p1 = srv1.server_address[1]
+        threading.Thread(target=srv1.serve_forever, daemon=True).start()
+        k1 = ET.fromstring(call(p1, type="keygen", user="a", password="b")).find(".//key").text
+        call(p1, type="config", action="set", key=k1,
+             xpath=SH + "/address/entry[@name='durable']",
+             element="<ip-netmask>10.9.9.9/32</ip-netmask>")
+        call(p1, type="op", key=k1, cmd="<commit></commit>")
+        srv1.shutdown()
+        # a fresh server from the same --state-file = a simulated restart
+        srv2, _ = mock.make_server("127.0.0.1", 0, state_file=str(sf))
+        p2 = srv2.server_address[1]
+        threading.Thread(target=srv2.serve_forever, daemon=True).start()
+        k2 = ET.fromstring(call(p2, type="keygen", user="a", password="b")).find(".//key").text
+        r = call(p2, type="config", action="show", key=k2,
+                 xpath=SH + "/address/entry[@name='durable']")
+        e = ET.fromstring(r).find(".//entry")
+        check("state-file survives restart", e is not None and e.findtext("ip-netmask") == "10.9.9.9/32", r)
+        srv2.shutdown()
+        sf.unlink()
     finally:
         server.shutdown()
 

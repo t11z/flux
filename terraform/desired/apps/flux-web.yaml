@@ -1,0 +1,10 @@
+app_name:     flux-web
+service_port: "8080"
+server_ips:
+  flux-web-srv-1: 10.10.10.10/32
+  flux-web-srv-2: 10.10.10.11/32
+source_zones:
+  - untrust
+applications:
+  - web-browsing
+  - ssl
