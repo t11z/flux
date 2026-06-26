@@ -82,11 +82,12 @@ Instead of a masked CI variable, the key can come from
 
 The `bws` CLI + `jq` must be present in the runner image.
 
-## ITSM notification
+## ITSM integration
 
 The `commit` job POSTs a small JSON change record to `$ITSM_WEBHOOK_URL` on success
-(skipped if unset). Point it at your ITSM intake (ServiceNow, Jira SM, …) to close the
-GitOps loop with an auditable change record.
+(skipped if unset). For concrete wiring — outbound (record the change) and inbound (ITSM starts a
+pipeline via the GitLab trigger API), with **ServiceNow** and **Jira Service Management** examples —
+see **[ITSM-INTEGRATION.md](ITSM-INTEGRATION.md)**.
 
 ## Runner image
 
