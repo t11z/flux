@@ -25,7 +25,8 @@ drift (scheduled) ─▶ terraform plan -detailed-exitcode   (must report "No ch
 ```
 
 The Terraform lives in [`../../terraform/`](../../terraform) and ships three everyday
-use cases as modules (publish an app, template network config, NAT interplay).
+use cases as modules (publish an app, template network config, NAT interplay) — **reference
+patterns** you extend toward managing your whole Panorama; see [EXTENDING.md](EXTENDING.md).
 
 **State is persistent and authoritative.** The desired config lives in git
 (`terraform/desired/`) and is converged as a whole into one GitLab-managed Terraform state;

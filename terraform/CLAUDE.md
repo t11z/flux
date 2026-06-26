@@ -17,6 +17,13 @@ The root is **data-driven**: the full desired config lives in git under `desired
 `fileset()`+`yamldecode()` and `for_each`-es the app/NAT modules (keyed by record name, so a
 change touches only that object). State is **persistent and authoritative** (ADR-0006).
 
+Vocabulary (post data-driven model): **module = a *kind* of capability** (reusable);
+**record = one *instance*** under `desired/`. The three are no longer symmetric:
+`template_network` is the **singleton** scaffolding of the coupled Template↔Device-Group unit,
+while `app_publish`/`nat_interplay` are **collections** (0..N records). The three use cases are
+**reference patterns**; adding more is the documented path to full coverage — see
+`../examples/gitlab/EXTENDING.md`.
+
 ## Local conventions
 
 - Provider pinned `~> 2.0`. **Every module** declares its own `required_providers`
