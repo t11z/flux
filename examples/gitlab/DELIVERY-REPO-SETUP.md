@@ -20,6 +20,7 @@ relative layout. The minimum runnable subset is:
 README.md                 ← delivery-repo readme (see examples/gitlab/README.md)
 RUNNER-SETUP.md           ← self-hosted runner guide (from examples/gitlab/)
 STATE-MANAGEMENT.md       ← backend / state / drift / import guide (from examples/gitlab/)
+ITSM-INTEGRATION.md       ← ServiceNow / Jira SM wiring (from examples/gitlab/)
 .gitignore                ← .terraform/, *.tfstate*, __pycache__/, tfplan, mock-audit.log,
                             mock-state/, *.backendrc, *_override.tf
 tools/
