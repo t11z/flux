@@ -42,6 +42,20 @@ variable "panos_skip_verify_certificate" {
   description = "Skip TLS verification (lab / self-signed Panorama)."
 }
 
+# ---- use-case selector ----
+# Drives which use case this run touches. A normal push leaves it "all" (current
+# behavior); an ITSM trigger sets it via variables[FLUX_MODULE] -> TF_VAR_flux_module.
+# Selecting a dependent use case auto-enables its prerequisites (see main.tf locals).
+variable "flux_module" {
+  type        = string
+  default     = "all"
+  description = "Use case to run: all | template_network | app_publish | nat_interplay."
+  validation {
+    condition     = contains(["all", "template_network", "app_publish", "nat_interplay"], var.flux_module)
+    error_message = "flux_module must be one of: all, template_network, app_publish, nat_interplay."
+  }
+}
+
 # ---- shared scaffolding ----
 variable "device_group" {
   type    = string

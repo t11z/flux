@@ -17,10 +17,13 @@ provider (v2, XML-API). It is an *inert template* in this repo
 validate ─▶ plan ─▶ apply ─▶ commit
    │          │        │         │
    │          │        │         └─ <commit> via XML-API, then ITSM webhook
-   │          │        └─ terraform apply (candidate config) — manual gate
-   │          └─ terraform plan (against Panorama or the mock)
+   │          │        └─ terraform apply (candidate config) — manual on push, auto on ITSM trigger
+   │          └─ terraform plan (all modules, or one use case on an ITSM trigger)
    └─ schema gate (test_validator.py) + terraform fmt/validate
 ```
+
+An ITSM workflow can also trigger this pipeline to run a single use case — see
+[ITSM-TRIGGER.md](ITSM-TRIGGER.md).
 
 The Terraform lives in [`../../terraform/`](../../terraform) and ships three everyday
 use cases as modules (publish an app, template network config, NAT interplay).
@@ -76,11 +79,17 @@ Instead of a masked CI variable, the key can come from
 
 The `bws` CLI + `jq` must be present in the runner image.
 
-## ITSM notification
+## ITSM integration (bidirectional)
 
-The `commit` job POSTs a small JSON change record to `$ITSM_WEBHOOK_URL` on success
-(skipped if unset). Point it at your ITSM intake (ServiceNow, Jira SM, …) to close the
-GitOps loop with an auditable change record.
+**Outbound — notify on success.** The `commit` job POSTs a small JSON change record to
+`$ITSM_WEBHOOK_URL` on success (skipped if unset). Point it at your ITSM intake (ServiceNow,
+Jira SM, …) to close the GitOps loop with an auditable change record.
+
+**Inbound — ITSM triggers a use case.** An ITSM workflow can start this pipeline for **one**
+Terraform use case via the GitLab pipeline trigger API, passing `FLUX_MODULE` and the use
+case's `TF_VAR_*` parameters. On a trigger run apply + commit run automatically (ITSM is the
+approval gate); a normal push is unchanged (all modules, manual gates). See
+**[ITSM-TRIGGER.md](ITSM-TRIGGER.md)**.
 
 ## Runner image
 

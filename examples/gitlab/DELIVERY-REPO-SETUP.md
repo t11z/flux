@@ -18,6 +18,8 @@ relative layout. The minimum runnable subset is:
 ```
 .gitlab-ci.yml            ← from examples/gitlab/.gitlab-ci.yml, at the ROOT
 README.md                 ← delivery-repo readme (see examples/gitlab/README.md)
+RUNNER-SETUP.md           ← self-hosted runner guide (from examples/gitlab/RUNNER-SETUP.md)
+ITSM-TRIGGER.md           ← inbound ITSM trigger guide (from examples/gitlab/ITSM-TRIGGER.md)
 .gitignore                ← .terraform/, *.tfstate*, __pycache__/, tfplan, mock-audit.log
 tools/
   validate_config.py      ← the validate-before-apply gate

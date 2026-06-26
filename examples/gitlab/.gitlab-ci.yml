@@ -1,4 +1,4 @@
-# flux - GitOps delivery pipeline (skeleton) for a self-hosted GitLab runner.
+# flux - GitOps delivery pipeline (skeleton).
 #
 # Drives Terraform (the official panos v2 provider, XML-API) against Panorama:
 #   validate -> plan -> apply -> commit
@@ -10,12 +10,24 @@
 # By DEFAULT it targets the in-repo mock Panorama (mock/panorama_mock.py) so the whole
 # pipeline runs end-to-end with no real device. To target a real Panorama, set
 # PANOS_PROTOCOL=https + PANOS_HOSTNAME and provide credentials (see the secrets block).
+#
+# INBOUND TRIGGER: an ITSM workflow can start this pipeline for ONE use case via the
+# GitLab trigger API (variables[FLUX_MODULE]=... plus variables[TF_VAR_*]=...). On a
+# trigger run apply+commit run automatically (ITSM is the approval gate); a normal push
+# behaves as before (all modules, manual apply/commit). See ITSM-TRIGGER.md.
 
 stages: [validate, plan, apply, commit]
+
+workflow:
+  name: 'flux: $FLUX_MODULE ($CI_PIPELINE_SOURCE)'
 
 variables:
   TF_ROOT: terraform
   TF_IN_AUTOMATION: "true"
+  TERRAFORM_VERSION: "1.9.8"
+  # --- use-case selector: "all" on a normal push; an ITSM trigger overrides it ---
+  FLUX_MODULE: "all"
+  TF_VAR_flux_module: "$FLUX_MODULE"
   # --- target: the mock by default; override for a real Panorama ---
   PANOS_HOSTNAME: "127.0.0.1"
   PANOS_PROTOCOL: "http"
@@ -30,10 +42,18 @@ variables:
   TF_VAR_panos_skip_verify_certificate: "false"
   PANOS_CURL_INSECURE: ""
 
-# A runner image that has BOTH terraform and python3 (stdlib is enough for the mock/gate).
-# Replace with your self-hosted runner's image or a tools image you control.
+# The jobs need BOTH terraform and python3 (stdlib is enough for the mock/gate), plus curl.
+# This default runs on gitlab.com shared runners out of the box: a Debian python image
+# (stdlib XML/expat works — Alpine's apk python3 has an expat symbol skew that breaks
+# xml.etree) plus a pinned terraform binary fetched in before_script. To use your own
+# self-hosted runner image that already bundles terraform + python3 + curl, drop the
+# before_script and set `image:` to that tag instead (see RUNNER-SETUP.md).
 default:
-  image: registry.example.com/flux/ci-terraform-python:latest
+  image: python:3.12-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends curl unzip ca-certificates >/dev/null
+    - curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -o /tmp/terraform.zip
+    - unzip -oq /tmp/terraform.zip -d /usr/local/bin && terraform version
 
 # ---------------------------------------------------------------------------
 # Credentials. Pick ONE:
@@ -66,10 +86,11 @@ validate:
     - terraform fmt -check -recursive
     - terraform validate
 
-# ---- plan: what would change on Panorama ----
+# ---- plan: what would change on Panorama (only the selected use case on a trigger) ----
 plan:
   stage: plan
   script:
+    - echo "flux_module=$FLUX_MODULE source=$CI_PIPELINE_SOURCE"
     - *start_mock
     # - *bws            # uncomment for Bitwarden-sourced credentials
     - cd "$TF_ROOT"
@@ -80,9 +101,11 @@ plan:
     expire_in: 1 day
 
 # ---- apply: push the candidate config via the XML-API ----
+# Auto-applies on an ITSM trigger run (ITSM is the approval gate); a normal push to
+# main keeps the manual click. The CI_PIPELINE_SOURCE guard ensures a push can never
+# auto-apply.
 apply:
   stage: apply
-  when: manual                      # gate production applies behind a click
   script:
     - *start_mock
     # - *bws
@@ -90,12 +113,14 @@ apply:
     - terraform init
     - terraform apply -input=false -auto-approve tfplan
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "trigger" && $CI_COMMIT_REF_NAME == "main"'
+      when: on_success
     - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
 
 # ---- commit: promote candidate -> running, then notify ITSM ----
 commit:
   stage: commit
-  when: manual
   script:
     - *start_mock
     # - *bws
@@ -113,9 +138,12 @@ commit:
     - |
       if [ -n "$ITSM_WEBHOOK_URL" ]; then
         curl -sf -X POST "$ITSM_WEBHOOK_URL" -H 'Content-Type: application/json' \
-          -d "{\"pipeline\":\"$CI_PIPELINE_URL\",\"commit\":\"$CI_COMMIT_SHA\",\"status\":\"committed\"}"
+          -d "{\"pipeline\":\"$CI_PIPELINE_URL\",\"commit\":\"$CI_COMMIT_SHA\",\"status\":\"committed\",\"module\":\"$FLUX_MODULE\"}"
       else
         echo "ITSM_WEBHOOK_URL not set - skipping change notification"
       fi
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "trigger" && $CI_COMMIT_REF_NAME == "main"'
+      when: on_success
     - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual

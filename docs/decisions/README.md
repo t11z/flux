@@ -36,3 +36,4 @@ Frontmatter (title, description, type, category, tags, status, created, updated,
 | [0003](0003-github-dev-gitlab-runtime.md) | Develop on GitHub, Run the Delivered GitOps on GitLab | accepted |
 | [0004](0004-mock-server-python-stdlib.md) | Build the Mock Panorama Server in Python Stdlib | accepted |
 | [0005](0005-use-the-panos-terraform-provider-v2.md) | Use the panos Terraform Provider v2 (XML-API) as the Apply Path | accepted |
+| [0006](0006-itsm-inbound-pipeline-trigger.md) | Expose an Inbound ITSM Pipeline Trigger for a Single Use Case | proposed |

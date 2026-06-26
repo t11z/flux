@@ -2,10 +2,22 @@
 # through the official panos v2 provider (XML-API). The three modules are
 # independently reusable; this root config composes them into one coherent change.
 
+# var.flux_module selects which use case this run touches. A dependent use case
+# auto-enables its prerequisites, so the [0] cross-references below are never
+# out of range: want_app/want_nat imply want_dg, and want_dg implies want_template.
+locals {
+  run_all       = var.flux_module == "all"
+  want_template = local.run_all || contains(["template_network", "app_publish", "nat_interplay"], var.flux_module)
+  want_dg       = local.run_all || contains(["app_publish", "nat_interplay"], var.flux_module)
+  want_app      = local.run_all || var.flux_module == "app_publish"
+  want_nat      = local.run_all || var.flux_module == "nat_interplay"
+}
+
 # ---- UC2: template network config (interface + zone + virtual router) ----
 # Built first: it owns the template + stack that the device-group binds to and that
 # the NAT rule (UC3) references -> this is the device-group <-> template interplay.
 module "template_network" {
+  count  = local.want_template ? 1 : 0
   source = "./modules/template_network"
 
   template       = var.template
@@ -20,31 +32,34 @@ module "template_network" {
 # The device-group binds the template stack (so its rules can resolve the template's
 # zones/interfaces) - the structural link between the two Panorama layers.
 resource "panos_device_group" "dg" {
+  count     = local.want_dg ? 1 : 0
   location  = { panorama = {} }
   name      = var.device_group
-  templates = [module.template_network.template_stack_name]
+  templates = [module.template_network[0].template_stack_name]
 }
 
 # ---- UC1: publish an application (address objects + service + security rule) ----
 module "app_publish" {
+  count  = local.want_app ? 1 : 0
   source = "./modules/dg_app_publish"
 
-  device_group      = panos_device_group.dg.name
+  device_group      = panos_device_group.dg[0].name
   app_name          = var.app_name
   server_ips        = var.server_ips
   service_port      = var.service_port
   source_zones      = var.app_source_zones
-  destination_zones = [module.template_network.zone_name]
+  destination_zones = [module.template_network[0].zone_name]
   applications      = var.app_applications
 }
 
 # ---- UC3: NAT rule referencing the template's zone + interface (the interplay) ----
 module "nat_interplay" {
+  count  = local.want_nat ? 1 : 0
   source = "./modules/dg_nat_interplay"
 
-  device_group          = panos_device_group.dg.name
+  device_group          = panos_device_group.dg[0].name
   nat_rule_name         = var.nat_rule_name
-  source_zones          = [module.template_network.zone_name]
-  destination_zone      = [module.template_network.zone_name]
-  translation_interface = module.template_network.interface_name
+  source_zones          = [module.template_network[0].zone_name]
+  destination_zone      = [module.template_network[0].zone_name]
+  translation_interface = module.template_network[0].interface_name
 }

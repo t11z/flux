@@ -22,6 +22,12 @@ XML-API (ADR-0005). The root config composes three independently reusable module
   PAN-OS requires at commit.
 - The device group binds the template stack (`panos_device_group.templates`) so device-group
   rules can resolve the template's zones/interfaces — the UC3 interplay.
+- `var.flux_module` (`all` | `template_network` | `app_publish` | `nat_interplay`) selects which
+  use case a run touches; `main.tf` `locals` translate it into `count` on each module/resource.
+  A dependent use case auto-enables its prerequisites (`want_app`/`want_nat` ⇒ `want_dg` ⇒
+  `want_template`), so the `[0]` cross-references stay in range. Default `all` = the original
+  apply-everything behavior. The ITSM trigger sets it via `TF_VAR_flux_module`
+  (see `../examples/gitlab/ITSM-TRIGGER.md`).
 
 ## Run it
 
