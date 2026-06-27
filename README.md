@@ -40,6 +40,19 @@ The schema is **derived from a live Panorama** (seeding + constraint probing) an
 PAN-OS version**; the validator is proven to agree with Panorama's own validation. See the
 [architecture page](https://t11z.github.io/flux/architecture.html) for the full picture.
 
+## Scope & non-goals
+
+flux is a **half-mature skeleton, not a finished product.** It ships with **three reference use
+cases** that demonstrate typical daily firewall-admin work (publish an app, template network config,
+NAT interplay) — they are **patterns to copy**, not the limit of what Panorama can hold. flux does
+**not** aim to cover every PAN-OS object out of the box; the curated schema and the three modules are
+the **extension surface** a customer grows toward their own requirements.
+
+The **end goal** is fully authoritative: once you have modelled the objects you care about, flux
+manages the whole Panorama as code (one persistent state, full converge, drift detection). You get
+there by **adding use cases** — see [`examples/gitlab/EXTENDING.md`](examples/gitlab/EXTENDING.md).
+Until then, flux authoritatively manages only the objects it models and leaves the rest untouched.
+
 ## Status
 
 | Phase | Scope | State |

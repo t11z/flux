@@ -24,6 +24,11 @@ variables:
   TERRAFORM_VERSION: "1.9.8"
   # Name of the GitLab-managed Terraform state (one authoritative config for flux).
   STATE_NAME: "flux"
+  # GitLab-managed state auth as env vars so EVERY terraform op (incl. the lock during
+  # `apply <savedplan>`) carries credentials - passing the password via -backend-config
+  # only covers init and breaks the saved-plan apply lock with "endpoint requires auth".
+  TF_HTTP_USERNAME: "gitlab-ci-token"
+  TF_HTTP_PASSWORD: "$CI_JOB_TOKEN"
   # --- target: the mock by default; override for a real Panorama ---
   PANOS_HOSTNAME: "127.0.0.1"
   PANOS_PROTOCOL: "http"
@@ -63,17 +68,15 @@ cache:
 .bws: &bws
   - export TF_VAR_panos_api_key="$(bws secret get "$BWS_PANOS_KEY_ID" | jq -r '.value')"
 
-# terraform init against GitLab-managed Terraform state (HTTP backend). CI_JOB_TOKEN is
-# predefined and auto-scoped to this project's Terraform-state API. Local dev fills the
-# same -backend-config from a gitignored *.backendrc with a PAT (see STATE-MANAGEMENT.md).
+# terraform init against GitLab-managed Terraform state (HTTP backend). Auth comes from
+# TF_HTTP_USERNAME/TF_HTTP_PASSWORD (set in variables: -> CI_JOB_TOKEN), so it covers every
+# terraform op incl. the apply-savedplan lock. Local dev: a gitignored *.backendrc with a PAT.
 .tf_init: &tf_init
   - |
     terraform init -input=false \
       -backend-config="address=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${STATE_NAME}" \
       -backend-config="lock_address=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${STATE_NAME}/lock" \
       -backend-config="unlock_address=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${STATE_NAME}/lock" \
-      -backend-config="username=gitlab-ci-token" \
-      -backend-config="password=${CI_JOB_TOKEN}" \
       -backend-config="lock_method=POST" \
       -backend-config="unlock_method=DELETE" \
       -backend-config="retry_wait_min=5"

@@ -21,6 +21,7 @@ README.md                 ← delivery-repo readme (see examples/gitlab/README.m
 RUNNER-SETUP.md           ← self-hosted runner guide (from examples/gitlab/)
 STATE-MANAGEMENT.md       ← backend / state / drift / import guide (from examples/gitlab/)
 ITSM-INTEGRATION.md       ← ServiceNow / Jira SM wiring (from examples/gitlab/)
+EXTENDING.md              ← how to add a use case (from examples/gitlab/)
 .gitignore                ← .terraform/, *.tfstate*, __pycache__/, tfplan, mock-audit.log,
                             mock-state/, *.backendrc, *_override.tf
 tools/
